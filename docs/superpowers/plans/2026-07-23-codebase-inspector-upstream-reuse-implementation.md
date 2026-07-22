@@ -228,11 +228,11 @@ Run:
 cd .github/skills/codebase-inspector
 npm test
 npm run lint
-if rg -n '@understand-anything|\.\./Understand-Anything|packages/core/(src|dist)' lib scripts vendor/understand-anything/extractors package.json; then exit 1; else rc=$?; test "$rc" -eq 1; fi
+if rg --pcre2 -n '^(?!// Source: ).*(?:@understand-anything|\.\./Understand-Anything|packages/core/(?:src|dist))' lib scripts vendor/understand-anything/extractors package.json; then exit 1; else rc=$?; test "$rc" -eq 1; fi
 git diff --check
 ```
 
-Expected: all tests pass, the forbidden runtime reference scan returns no matches, and the worktree diff is clean.
+Expected: all tests pass, the runtime-reference scan returns no matches outside required `// Source:` provenance comments, and the worktree diff is clean.
 
 Commit:
 
@@ -683,11 +683,11 @@ npm audit --omit=dev
 npm run check:licenses
 npm run release:zip
 node -e "import('./lib/parsers/registry.mjs').then(() => console.log('standalone-import-ok'))"
-if rg -n '@understand-anything|\.\./Understand-Anything|packages/core/(src|dist)' lib scripts vendor/understand-anything/extractors package.json; then exit 1; fi
+if rg --pcre2 -n '^(?!// Source: ).*(?:@understand-anything|\.\./Understand-Anything|packages/core/(?:src|dist))' lib scripts vendor/understand-anything/extractors package.json; then exit 1; fi
 git diff --check
 ```
 
-Expected: all tests and audits pass, `standalone-import-ok` is printed, the forbidden-reference scan has no matches, and the release zip test passes.
+Expected: all tests and audits pass, `standalone-import-ok` is printed, the runtime-reference scan has no matches outside required `// Source:` provenance comments, and the release zip test passes.
 
 Commit:
 
