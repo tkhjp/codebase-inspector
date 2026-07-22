@@ -235,4 +235,38 @@ describe("Python rich symbol extraction", () => {
     expect(serialized).not.toContain("make_default");
     expect(serialized).not.toContain("default-secret");
   });
+
+  it("renders Callable and forward-reference types while retaining unsupported properties", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/type_shapes.py",
+      language: "python",
+      content: [
+        "from typing import Callable",
+        "class TypeShapes:",
+        "    callback: Callable[[int], str]",
+        "    parent: 'pkg.Node'",
+        "    unsupported: factory('property-secret')",
+        "    def transform(self, callback: Callable[[int], str], parent: 'Node') -> Callable[[str], int]:",
+        "        helper('source-body-secret')",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.types[0].properties).toEqual([
+      expect.objectContaining({ name: "callback", type: "Callable[[int], str]" }),
+      expect.objectContaining({ name: "parent", type: "pkg.Node" }),
+      expect.objectContaining({ name: "unsupported", type: null })
+    ]);
+    expect(result.methods).toContainEqual(expect.objectContaining({
+      name: "transform",
+      parameters: [
+        { name: "callback", type: "Callable[[int], str]" },
+        { name: "parent", type: "Node" }
+      ],
+      returnType: "Callable[[str], int]"
+    }));
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("property-secret");
+    expect(serialized).not.toContain("source-body-secret");
+  });
 });

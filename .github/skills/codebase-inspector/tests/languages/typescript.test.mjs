@@ -378,6 +378,120 @@ describe("TypeScript rich symbol extraction", () => {
     expect(result.warnings).toEqual(["Skipped dynamic TypeScript call target at line 1"]);
     expect(JSON.stringify(result)).not.toContain("CALL_SECRET");
   });
+
+  it("keeps source-bearing named and namespace re-exports from exporting colliding locals", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/reexport-collisions.ts",
+      language: "typescript",
+      content: [
+        "function local() {}",
+        "function namespaceCollision() {}",
+        "export { local as remote } from './dep.js';",
+        "export * as namespaceCollision from './namespace.js';",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.functions).toEqual([
+      expect.objectContaining({ name: "local", exported: false }),
+      expect.objectContaining({ name: "namespaceCollision", exported: false })
+    ]);
+    expect(result.importCandidates).toEqual([
+      { source: "./dep.js", specifiers: ["remote"], lineNumber: 3, kind: "module" },
+      { source: "./namespace.js", specifiers: ["* as namespaceCollision"], lineNumber: 4, kind: "module" }
+    ]);
+  });
+
+  it("renders common structural TypeScript parameter return and property types", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/type-shapes.ts",
+      language: "typescript",
+      content: [
+        "export class TypeShapes {",
+        "  callback: (value: Namespace.Input) => Promise<Result>;",
+        "  tuple: [string, Namespace.Item];",
+        "  object: { value: string; nested: ReadonlyArray<Namespace.Item | null>; handler(input: Thing): Result };",
+        "  state: 'ready' | 404 | true | null;",
+        "}",
+        "export function transform(",
+        "  callback: (value: Namespace.Input) => Promise<Result>,",
+        "  tuple: [string, Namespace.Item],",
+        "  object: { value: string; nested: ReadonlyArray<Namespace.Item | null> },",
+        "  state: 'ready' | 404 | true | null = 'default-type-secret'",
+        "): (item: Namespace.Item) => Result { helper('source-body-secret'); return item => item; }",
+        ""
+      ].join("\n")
+    });
+
+    const expectedTypes = {
+      callback: "(value: Namespace.Input) => Promise<Result>",
+      tuple: "[string, Namespace.Item]",
+      object: "{ value: string; nested: ReadonlyArray<Namespace.Item | null>; handler(input: Thing): Result }",
+      state: "\"ready\" | 404 | true | null"
+    };
+    expect(Object.fromEntries(result.types[0].properties.map(({ name, type }) => [name, type]))).toEqual(expectedTypes);
+    expect(result.functions).toContainEqual(expect.objectContaining({
+      name: "transform",
+      parameters: [
+        { name: "callback", type: expectedTypes.callback },
+        { name: "tuple", type: expectedTypes.tuple },
+        { name: "object", type: "{ value: string; nested: ReadonlyArray<Namespace.Item | null> }" },
+        { name: "state", type: expectedTypes.state }
+      ],
+      returnType: "(item: Namespace.Item) => Result"
+    }));
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("default-type-secret");
+    expect(serialized).not.toContain("source-body-secret");
+  });
+
+  it("extracts TypeScript generator declarations and values with caller context", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/generators.ts",
+      language: "typescript",
+      content: [
+        "export function* declared(): Iterable<Result> { helper(); }",
+        "export const valued = function* (): Iterable<Result> { helper(); };",
+        "export default function* (): Iterable<Result> { helper(); }",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.functions).toEqual([
+      expect.objectContaining({ name: "declared", returnType: "Iterable<Result>", exported: true }),
+      expect.objectContaining({ name: "valued", returnType: "Iterable<Result>", exported: true }),
+      expect.objectContaining({ name: "default", returnType: "Iterable<Result>", exported: true })
+    ]);
+    expect(result.callCandidates).toEqual([
+      { callerName: "declared", callerOwnerName: null, calleeText: "helper", lineNumber: 1 },
+      { callerName: "valued", callerOwnerName: null, calleeText: "helper", lineNumber: 2 },
+      { callerName: "default", callerOwnerName: null, calleeText: "helper", lineNumber: 3 }
+    ]);
+  });
+
+  it("preserves static string and numeric binding keys and rejects computed keys", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/binding-keys.ts",
+      language: "typescript",
+      content: [
+        "function staticKeys({'display-name': label, 7: lucky}: Input) {}",
+        "function dynamicKey({[makeKey('binding-secret')]: hidden}: Input) {}",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.functions).toEqual([
+      expect.objectContaining({
+        name: "staticKeys",
+        parameters: [{ name: "{\"display-name\": label, 7: lucky}", type: "Input" }]
+      }),
+      expect.objectContaining({ name: "dynamicKey", parameters: [] })
+    ]);
+    expect(result.warnings).toEqual(["Skipped dynamic TypeScript binding key at line 2"]);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("binding-secret");
+    expect(serialized).not.toContain("makeKey");
+  });
 });
 
 describe("JavaScript rich symbol extraction", () => {
@@ -490,5 +604,35 @@ describe("JavaScript rich symbol extraction", () => {
       lineNumber: 1
     });
     expect(JSON.stringify(result)).not.toContain("EXPORT_SECRET");
+  });
+
+  it("extracts JavaScript generator declarations and CommonJS values with caller context", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/generators.js",
+      language: "javascript",
+      content: [
+        "function* local() { helper(); }",
+        "exports.local = local;",
+        "exports.assigned = function* () { helper(); };",
+        "module.exports = { object: function* () { helper(); }, *method() { helper(); } };",
+        "module.exports.direct = function* () { helper(); };",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.functions).toEqual([
+      expect.objectContaining({ name: "local", exported: true }),
+      expect.objectContaining({ name: "assigned", exported: true }),
+      expect.objectContaining({ name: "object", exported: true }),
+      expect.objectContaining({ name: "method", exported: true }),
+      expect.objectContaining({ name: "direct", exported: true })
+    ]);
+    expect(result.callCandidates).toEqual([
+      { callerName: "local", callerOwnerName: null, calleeText: "helper", lineNumber: 1 },
+      { callerName: "assigned", callerOwnerName: null, calleeText: "helper", lineNumber: 3 },
+      { callerName: "object", callerOwnerName: null, calleeText: "helper", lineNumber: 4 },
+      { callerName: "method", callerOwnerName: null, calleeText: "helper", lineNumber: 4 },
+      { callerName: "direct", callerOwnerName: null, calleeText: "helper", lineNumber: 5 }
+    ]);
   });
 });

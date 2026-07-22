@@ -1,7 +1,7 @@
 // Adapted from Egonex-AI/Understand-Anything at 54754a6f97051d1d76c8758353d8ea41afe502a6.
 // Original project and this adaptation are licensed under MIT; see repository NOTICE.
 
-import { findChild } from "./base-extractor.mjs";
+import { findChild, getStringValue } from "./base-extractor.mjs";
 
 function lineRange(node) {
   return [node.startPosition.row + 1, node.endPosition.row + 1];
@@ -33,6 +33,30 @@ function safeReference(node) {
     const object = safeReference(node.childForFieldName("object"));
     const attribute = safeIdentifier(node.childForFieldName("attribute"));
     return object && attribute ? `${object}.${attribute}` : null;
+  }
+
+  if (node.type === "generic_type") {
+    const name = safeReference(node.namedChildren[0]);
+    const parameters = node.namedChildren.find((child) => child.type === "type_parameter");
+    const argumentsList = parameters?.namedChildren.map(safeReference).filter(Boolean) ?? [];
+    return name && parameters && argumentsList.length === parameters.namedChildren.length
+      ? `${name}[${argumentsList.join(", ")}]`
+      : null;
+  }
+
+  if (node.type === "type_parameter") {
+    const values = node.namedChildren.map(safeReference).filter(Boolean);
+    return values.length === node.namedChildren.length ? values.join(", ") : null;
+  }
+
+  if (node.type === "list") {
+    const values = node.namedChildren.map(safeReference).filter(Boolean);
+    return values.length === node.namedChildren.length ? `[${values.join(", ")}]` : null;
+  }
+
+  if (node.type === "string") {
+    const value = getStringValue(node);
+    return /^(?:[A-Za-z_]\w*)(?:\.[A-Za-z_]\w*)*$/.test(value) ? value : null;
   }
 
   if (node.type === "subscript") {
@@ -113,7 +137,7 @@ function extractProperty(node) {
   if (!assignment) return null;
   const name = safeIdentifier(assignment.childForFieldName("left"));
   const type = safeReference(assignment.childForFieldName("type"));
-  if (!name || !type) return null;
+  if (!name) return null;
   return {
     name,
     type,

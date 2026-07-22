@@ -12,7 +12,8 @@ const TYPE_KINDS = Object.freeze({
 });
 
 const METHOD_TYPES = new Set(["method_definition", "method_signature", "abstract_method_signature"]);
-const CALLABLE_VALUE_TYPES = new Set(["arrow_function", "function_expression", "function"]);
+const FUNCTION_DECLARATION_TYPES = new Set(["function_declaration", "function_signature", "generator_function_declaration"]);
+const CALLABLE_VALUE_TYPES = new Set(["arrow_function", "function_expression", "function", "generator_function"]);
 const SAFE_NAME_TYPES = new Set([
   "identifier",
   "type_identifier",
@@ -74,6 +75,46 @@ function renderTypeArguments(node) {
   return values.length === node.namedChildren.length ? `<${values.join(", ")}>` : null;
 }
 
+function renderTypedParameters(node) {
+  const parameters = extractParameters(node);
+  return parameters.map(({ name, type }) => type ? `${name}: ${type}` : name).join(", ");
+}
+
+function renderStaticLiteral(node) {
+  if (!node) return null;
+  if (node.type === "string") return JSON.stringify(getStringValue(node));
+  if (["true", "false", "null"].includes(node.type)) return node.type;
+  if (node.type === "number" && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(node.text)) return node.text;
+  return null;
+}
+
+function renderStaticPropertyKey(node) {
+  const name = safeName(node);
+  if (name) return name;
+  if (node?.type === "string") return JSON.stringify(getStringValue(node));
+  if (node?.type === "number" && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(node.text)) return node.text;
+  return null;
+}
+
+function renderObjectTypeMember(node) {
+  const name = safeName(node.childForFieldName("name"));
+  if (!name) return null;
+  const optional = hasToken(node, "?") ? "?" : "";
+
+  if (node.type === "property_signature") {
+    const type = renderType(node.childForFieldName("type") ?? childOfType(node, "type_annotation"));
+    return type ? `${name}${optional}: ${type}` : null;
+  }
+
+  if (node.type === "method_signature") {
+    const parameters = renderTypedParameters(node.childForFieldName("parameters"));
+    const returnType = renderType(node.childForFieldName("return_type"));
+    return returnType ? `${name}${optional}(${parameters}): ${returnType}` : null;
+  }
+
+  return null;
+}
+
 function renderType(node) {
   if (!node) return null;
   if (node.type === "type_annotation" || node.type === "type") return renderType(node.namedChildren[0]);
@@ -92,6 +133,26 @@ function renderType(node) {
     const element = renderType(node.childForFieldName("element") ?? node.namedChildren[0]);
     return element ? `${element}[]` : null;
   }
+
+  if (node.type === "function_type") {
+    const parameters = renderTypedParameters(node.childForFieldName("parameters"));
+    const returnType = renderType(node.childForFieldName("return_type"));
+    return returnType ? `(${parameters}) => ${returnType}` : null;
+  }
+
+  if (node.type === "tuple_type") {
+    const children = node.namedChildren.filter((child) => child.type !== "comment");
+    const values = children.map(renderType).filter(Boolean);
+    return values.length === children.length ? `[${values.join(", ")}]` : null;
+  }
+
+  if (node.type === "object_type") {
+    const children = node.namedChildren.filter((child) => child.type !== "comment");
+    const values = children.map(renderObjectTypeMember).filter(Boolean);
+    return values.length === children.length ? `{ ${values.join("; ")} }` : null;
+  }
+
+  if (node.type === "literal_type") return renderStaticLiteral(node.namedChildren[0]);
 
   if (["union_type", "intersection_type"].includes(node.type)) {
     const values = node.namedChildren.map(renderType).filter(Boolean);
@@ -126,7 +187,7 @@ function renderBindingPattern(node) {
   }
 
   if (node.type === "pair_pattern") {
-    const key = safeName(node.childForFieldName("key") ?? node.namedChildren[0]);
+    const key = renderStaticPropertyKey(node.childForFieldName("key") ?? node.namedChildren[0]);
     const value = renderBindingPattern(node.childForFieldName("value") ?? node.namedChildren.at(-1));
     return key && value ? `${key}: ${value}` : null;
   }
@@ -327,6 +388,7 @@ function explicitExportNames(rootNode, allowCommonJs) {
 
   for (const node of rootNode.namedChildren) {
     if (node.type === "export_statement") {
+      if (node.childForFieldName("source")) continue;
       const clause = childOfType(node, "export_clause");
       if (clause) {
         for (const specifier of clause.namedChildren) {
@@ -388,7 +450,7 @@ function callableContext(node, context, callableNames, typeNames, allowCommonJs)
     return { ...context, callerName };
   }
 
-  if (["function_declaration", "function_signature"].includes(node.type)) {
+  if (FUNCTION_DECLARATION_TYPES.has(node.type)) {
     const callerName = callableNames.get(node.id) ?? declarationName(node);
     return { callerName, ownerName: null };
   }
@@ -416,14 +478,21 @@ function traversalChildren(node) {
     const value = node.childForFieldName("value");
     return value ? node.namedChildren.filter((child) => child.id !== value.id) : node.namedChildren;
   }
+  if (node.type === "pair_pattern" && node.childForFieldName("key")?.type === "computed_property_name") {
+    const value = node.childForFieldName("value");
+    return value ? [value] : [];
+  }
   return node.namedChildren;
 }
 
-function extractCalls(rootNode, callableNames, typeNames, allowCommonJs, warnCallTarget) {
+function extractCalls(rootNode, callableNames, typeNames, allowCommonJs, warnCallTarget, warnBindingKey) {
   const calls = [];
 
   const visit = (node, context) => {
     const current = callableContext(node, context, callableNames, typeNames, allowCommonJs);
+    if (node.type === "pair_pattern" && node.childForFieldName("key")?.type === "computed_property_name") {
+      warnBindingKey(node);
+    }
     if (node.type === "call_expression") {
       const target = node.childForFieldName("function");
       const callee = calleeText(target);
@@ -494,6 +563,11 @@ export class TypeScriptExtractor {
       warningSet,
       `Skipped dynamic ${context.language === "javascript" ? "JavaScript" : "TypeScript"} call target at line ${node.startPosition.row + 1}`
     );
+    const warnBindingKey = (node) => addWarning(
+      warnings,
+      warningSet,
+      `Skipped dynamic TypeScript binding key at line ${node.startPosition.row + 1}`
+    );
 
     const processType = (node, exported, fallbackName = null) => {
       const name = declarationName(node) ?? fallbackName;
@@ -544,7 +618,7 @@ export class TypeScriptExtractor {
       } else if (TYPE_KINDS[node.type]) {
         const name = declarationName(node);
         processType(node, exported || (name ? exportNames.has(name) : false), fallbackName);
-      } else if (["function_declaration", "function_signature"].includes(node.type)) {
+      } else if (FUNCTION_DECLARATION_TYPES.has(node.type)) {
         const name = declarationName(node) ?? fallbackName;
         if (name) functions.push(extractFunction(node, name, exported || exportNames.has(name), callableNames));
       } else if (["lexical_declaration", "variable_declaration"].includes(node.type)) {
@@ -608,7 +682,8 @@ export class TypeScriptExtractor {
       const declaration = node.childForFieldName("declaration") ?? node.namedChildren.find((child) => (
         TYPE_KINDS[child.type]
         || child.type === "ambient_declaration"
-        || ["function_declaration", "function_signature", "lexical_declaration", "variable_declaration"].includes(child.type)
+        || FUNCTION_DECLARATION_TYPES.has(child.type)
+        || ["lexical_declaration", "variable_declaration"].includes(child.type)
       ));
       if (declaration) {
         processDeclaration(declaration, true, hasToken(node, "default") ? "default" : null);
@@ -648,7 +723,7 @@ export class TypeScriptExtractor {
       methods,
       functions,
       importCandidates,
-      callCandidates: extractCalls(rootNode, callableNames, typeNames, allowCommonJs, warnCallTarget),
+      callCandidates: extractCalls(rootNode, callableNames, typeNames, allowCommonJs, warnCallTarget, warnBindingKey),
       warnings
     };
   }
