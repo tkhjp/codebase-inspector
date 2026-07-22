@@ -21,6 +21,17 @@ function compareRawMethods(left, right) {
     || compareText(left.returnType ?? "", right.returnType ?? "");
 }
 
+function compareRawFunctions(left, right) {
+  return compareText(left.name, right.name)
+    || left.lineRange[0] - right.lineRange[0]
+    || left.lineRange[1] - right.lineRange[1]
+    || compareText(JSON.stringify(left.parameters), JSON.stringify(right.parameters))
+    || compareText(left.returnType ?? "", right.returnType ?? "")
+    || compareText(left.visibility ?? "", right.visibility ?? "")
+    || compareText(String(left.async), String(right.async))
+    || compareText(String(left.exported), String(right.exported));
+}
+
 function callableFields(raw, id, filePath) {
   return {
     id,
@@ -115,11 +126,14 @@ export function buildSymbolIndex({ project, scan, analyses, skillVersion }) {
       owner.methodIds.push(method.id);
       return method;
     });
-    const functionsForFile = analysis.functions.map((raw) => callableFields(
-      raw,
-      stableId("function", analysis.filePath, raw.name, raw.lineRange[0]),
-      analysis.filePath
-    ));
+    const functionIdCounts = new Map();
+    const functionsForFile = [...analysis.functions].sort(compareRawFunctions).map((raw) => {
+      const baseId = stableId("function", analysis.filePath, raw.name, raw.lineRange[0]);
+      const occurrence = (functionIdCounts.get(baseId) ?? 0) + 1;
+      functionIdCounts.set(baseId, occurrence);
+      const id = occurrence === 1 ? baseId : `${baseId}:overload:${occurrence}`;
+      return callableFields(raw, id, analysis.filePath);
+    });
 
     typesForFile.sort(compareSymbols);
     methodsForFile.sort(compareSymbols);

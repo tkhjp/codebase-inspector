@@ -14,19 +14,19 @@ function containsLineRange(owner, callable) {
   return callable.lineRange[0] >= owner.lineRange[0] && callable.lineRange[1] <= owner.lineRange[1];
 }
 
-function candidateOwners(structure, callable, callableNameCounts) {
+function candidateOwners(structure, callable, callableNameCounts, language) {
   const declared = structure.classes.filter((owner) => owner.methods.includes(callable.name));
   const eligible = declared.filter((owner) => containsLineRange(owner, callable));
-  if (eligible.length === 0 && declared.length === 1 && callableNameCounts.get(callable.name) === 1) return declared;
+  if (language === "go" && eligible.length === 0 && declared.length === 1 && callableNameCounts.get(callable.name) === 1) return declared;
   if (eligible.length < 2) return eligible;
   const smallestSpan = Math.min(...eligible.map((owner) => owner.lineRange[1] - owner.lineRange[0]));
   return eligible.filter((owner) => owner.lineRange[1] - owner.lineRange[0] === smallestSpan);
 }
 
-function adaptCallables(structure, exported) {
+function adaptCallables(structure, exported, language) {
   const callableNameCounts = new Map();
   structure.functions.forEach((callable) => callableNameCounts.set(callable.name, (callableNameCounts.get(callable.name) ?? 0) + 1));
-  const ownership = structure.functions.map((callable) => candidateOwners(structure, callable, callableNameCounts));
+  const ownership = structure.functions.map((callable) => candidateOwners(structure, callable, callableNameCounts, language));
   const consumed = new Set();
   const warnings = [];
   const ambiguous = new Map();
@@ -78,7 +78,7 @@ export function createUpstreamAdapter(extractor) {
       const structure = extractor.extractStructure(rootNode);
       const calls = extractor.extractCallGraph(rootNode);
       const exported = new Set(structure.exports.map((entry) => entry.name));
-      const callables = adaptCallables(structure, exported);
+      const callables = adaptCallables(structure, exported, language);
 
       const types = structure.classes.map((entry) => ({
         kind: "class",

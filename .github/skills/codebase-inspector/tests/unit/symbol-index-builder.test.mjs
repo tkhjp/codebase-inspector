@@ -167,3 +167,27 @@ test("uses deterministic unique IDs when overloads share a start line", () => {
   expect(new Set(first.methods.map((method) => method.id)).size).toBe(2);
   expect(second.methods).toEqual(first.methods);
 });
+
+test("uses deterministic collision-only IDs when free functions share a start line", () => {
+  const overloaded = {
+    ...analysis,
+    warnings: [],
+    methods: [],
+    functions: [
+      { ...callable("run", [5, 5]), parameters: [{ name: "value", type: null }] },
+      { ...callable("run", [5, 5]) },
+      { ...callable("helper", [8, 8]) }
+    ]
+  };
+
+  const first = buildSymbolIndex({ project, scan, analyses: [overloaded], skillVersion: "0.1.0" }).symbolIndex;
+  const reordered = { ...overloaded, functions: [...overloaded.functions].reverse() };
+  const second = buildSymbolIndex({ project, scan, analyses: [reordered], skillVersion: "0.1.0" }).symbolIndex;
+
+  expect(first.functions.map((func) => func.id)).toEqual([
+    "function:src%2Fz.ts:run:5",
+    "function:src%2Fz.ts:run:5:overload:2",
+    "function:src%2Fz.ts:helper:8"
+  ]);
+  expect(second.functions).toEqual(first.functions);
+});

@@ -52,3 +52,57 @@ test("consumes overload callable details once in source order", () => {
   ]);
   expect(result.functions).toEqual([]);
 });
+
+test("keeps an out-of-range sole callable free for non-Go languages", () => {
+  const adapter = createUpstreamAdapter({
+    extractStructure() {
+      return {
+        classes: [{ name: "Runner", lineRange: [1, 5], methods: ["run"], properties: [] }],
+        functions: [callable("run", [8, 9], ["freeValue"])],
+        imports: [],
+        exports: []
+      };
+    },
+    extractCallGraph() { return []; }
+  });
+
+  const result = adapter.extract({}, { filePath: "sample.ts", language: "typescript" });
+
+  expect(result.methods).toEqual([expect.objectContaining({
+    name: "run",
+    ownerName: "Runner",
+    lineRange: [1, 5],
+    parameters: []
+  })]);
+  expect(result.functions).toEqual([expect.objectContaining({
+    name: "run",
+    lineRange: [8, 9],
+    parameters: [{ name: "freeValue", type: null }]
+  })]);
+  expect(result.warnings).toEqual(["Upstream method Runner.run has no callable detail record"]);
+});
+
+test("uses the out-of-range sole callable fallback for Go receiver methods", () => {
+  const adapter = createUpstreamAdapter({
+    extractStructure() {
+      return {
+        classes: [{ name: "Runner", lineRange: [2, 2], methods: ["run"], properties: [] }],
+        functions: [callable("run", [4, 4], ["value"])],
+        imports: [],
+        exports: []
+      };
+    },
+    extractCallGraph() { return []; }
+  });
+
+  const result = adapter.extract({}, { filePath: "sample.go", language: "go" });
+
+  expect(result.methods).toEqual([expect.objectContaining({
+    name: "run",
+    ownerName: "Runner",
+    lineRange: [4, 4],
+    parameters: [{ name: "value", type: null }]
+  })]);
+  expect(result.functions).toEqual([]);
+  expect(result.warnings).toEqual([]);
+});
