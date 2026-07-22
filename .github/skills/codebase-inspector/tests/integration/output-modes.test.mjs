@@ -12,6 +12,17 @@ const defaultBlock = [
   "# END Codebase Inspector"
 ].join("\n");
 
+function invalidUtf8ExcludeFixture() {
+  const before = Buffer.from([0xff, 0xfe, 0x62, 0x65, 0x66, 0x6f, 0x72, 0x65, 0x0d, 0x0a]);
+  const owned = Buffer.from([
+    "# BEGIN Codebase Inspector\r\n",
+    ".code-understanding/\n",
+    "# END Codebase Inspector\r\n"
+  ].join(""), "ascii");
+  const after = Buffer.from([0x61, 0x66, 0x74, 0x65, 0x72, 0x80, 0xff, 0x0a]);
+  return { before, owned, after, prior: Buffer.concat([before, owned, after]) };
+}
+
 test("default mode maintains one exact owned exclude block and never edits .gitignore", async () => {
   const root = await createFixtureRepo({ ".gitignore": "dist/\n", "src/app.ts": "export const app = true;\n" });
   const excludePath = join(root, ".git/info/exclude");
@@ -49,6 +60,42 @@ test("custom output mode writes the normalized repository-relative path in the o
     "reports/code/",
     "# END Codebase Inspector"
   ].join("\n"));
+});
+
+test("successful untracked publication preserves unrelated invalid UTF-8 bytes verbatim", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const excludePath = join(root, ".git/info/exclude");
+  const fixture = invalidUtf8ExcludeFixture();
+  await writeFile(excludePath, fixture.prior);
+
+  await publishArtifacts({
+    targetRoot: root,
+    outputPath: join(root, ".code-understanding"),
+    artifacts: createArtifactFixture(),
+    tracked: false
+  });
+
+  expect(await readFile(excludePath)).toEqual(Buffer.concat([
+    fixture.before,
+    fixture.after,
+    Buffer.from(`${defaultBlock}\n`, "ascii")
+  ]));
+});
+
+test("successful tracked publication preserves unrelated invalid UTF-8 bytes verbatim", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const excludePath = join(root, ".git/info/exclude");
+  const fixture = invalidUtf8ExcludeFixture();
+  await writeFile(excludePath, fixture.prior);
+
+  await publishArtifacts({
+    targetRoot: root,
+    outputPath: join(root, ".code-understanding"),
+    artifacts: createArtifactFixture(),
+    tracked: true
+  });
+
+  expect(await readFile(excludePath)).toEqual(Buffer.concat([fixture.before, fixture.after]));
 });
 
 test.each([

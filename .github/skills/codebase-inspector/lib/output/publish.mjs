@@ -19,6 +19,9 @@ const artifactNames = Object.freeze([
 ]);
 const beginMarker = "# BEGIN Codebase Inspector";
 const endMarker = "# END Codebase Inspector";
+const beginMarkerBytes = Buffer.from(beginMarker, "ascii");
+const endMarkerBytes = Buffer.from(endMarker, "ascii");
+const lineFeed = Buffer.from([0x0a]);
 const jsonValidators = new Map([
   ["analysis-report.json", parseAnalysisReport],
   ["code-graph.json", parseCodeGraph],
@@ -46,25 +49,46 @@ function validateArtifacts(artifacts) {
   }
 }
 
-function ownedBlock(outputRelativePath) {
-  return `${beginMarker}\n${outputRelativePath.replace(/\/+$/, "")}/\n${endMarker}`;
+function byteLines(bytes) {
+  const lines = [];
+  let start = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] !== 0x0a) continue;
+    const contentEnd = index > start && bytes[index - 1] === 0x0d ? index - 1 : index;
+    lines.push({ content: bytes.subarray(start, contentEnd), raw: bytes.subarray(start, index + 1) });
+    start = index + 1;
+  }
+  if (start < bytes.length) lines.push({ content: bytes.subarray(start), raw: bytes.subarray(start) });
+  return lines;
 }
 
-function removeOwnedBlocks(content) {
-  const lines = content.split("\n");
+function isOwnedBodyLine(content) {
+  if (content.length < 2 || content[0] === 0x2f || content.at(-1) !== 0x2f) return false;
+  let segmentStart = 0;
+  for (let index = 0; index < content.length; index += 1) {
+    const byte = content[index];
+    if (byte < 0x20 || byte > 0x7e) return false;
+    if (byte !== 0x2f) continue;
+    if (index - segmentStart === 2 && content[segmentStart] === 0x2e && content[segmentStart + 1] === 0x2e) return false;
+    segmentStart = index + 1;
+  }
+  return true;
+}
+
+function removeOwnedBlocks(bytes) {
+  const lines = byteLines(bytes);
   const retained = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const body = lines[index + 1];
-    if (lines[index] === beginMarker
-      && typeof body === "string"
-      && /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[^\n]+\/$/.test(body)
-      && lines[index + 2] === endMarker) {
+    if (lines[index].content.equals(beginMarkerBytes)
+      && lines[index + 1]?.content
+      && isOwnedBodyLine(lines[index + 1].content)
+      && lines[index + 2]?.content.equals(endMarkerBytes)) {
       index += 2;
       continue;
     }
-    retained.push(lines[index]);
+    retained.push(lines[index].raw);
   }
-  return retained.join("\n");
+  return Buffer.concat(retained);
 }
 
 async function gitPublicationPaths(targetRoot) {
@@ -89,13 +113,14 @@ async function captureFile(path, fsOps) {
 }
 
 function desiredExclude(snapshot, targetRoot, outputPath, tracked) {
-  let updated = removeOwnedBlocks(snapshot.bytes.toString("utf8"));
+  const retained = removeOwnedBlocks(snapshot.bytes);
+  let bytes = retained;
   if (!tracked) {
     const outputRelativePath = relative(targetRoot, outputPath).split("\\").join("/");
-    const separator = updated.length > 0 && !updated.endsWith("\n") ? "\n" : "";
-    updated = `${updated}${separator}${ownedBlock(outputRelativePath)}\n`;
+    const separator = retained.length > 0 && retained.at(-1) !== 0x0a ? lineFeed : Buffer.alloc(0);
+    const block = Buffer.from(`${beginMarker}\n${outputRelativePath.replace(/\/+$/, "")}/\n${endMarker}\n`, "utf8");
+    bytes = Buffer.concat([retained, separator, block]);
   }
-  const bytes = Buffer.from(updated, "utf8");
   return { bytes, changed: !snapshot.bytes.equals(bytes) };
 }
 
