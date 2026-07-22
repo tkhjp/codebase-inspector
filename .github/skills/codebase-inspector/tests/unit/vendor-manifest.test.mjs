@@ -15,4 +15,16 @@ describe("vendored Understand-Anything snapshot", () => {
     expect(manifest.extractors.every((entry) => /^[a-f0-9]{64}$/.test(entry.generatedSha256))).toBe(true);
     expect(manifest.localPatches).toEqual([]);
   });
+
+  test("records each manifest source path in its generated module", async () => {
+    const manifestUrl = new URL("../../vendor/understand-anything/manifest.json", import.meta.url);
+    const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+    const skillRoot = new URL("../../", import.meta.url);
+    const skillPrefix = ".github/skills/codebase-inspector/";
+
+    for (const entry of [manifest.base, ...manifest.extractors]) {
+      const generatedUrl = new URL(entry.generatedPath.slice(skillPrefix.length), skillRoot);
+      expect(await readFile(generatedUrl, "utf8")).toContain(entry.sourcePath);
+    }
+  });
 });
