@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
+import * as fs from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { publishArtifacts } from "../../lib/output/publish.mjs";
@@ -48,4 +49,49 @@ test("custom output mode writes the normalized repository-relative path in the o
     "reports/code/",
     "# END Codebase Inspector"
   ].join("\n"));
+});
+
+test.each([
+  { tracked: false, prior: Buffer.from("unrelated\r\n*.keep\r\n", "utf8") },
+  { tracked: true, prior: Buffer.from(`unrelated\r\n${defaultBlock}\n*.keep\r\n`, "utf8") }
+])("restores exact prior exclude bytes when $tracked publication fails", async ({ tracked, prior }) => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const outputPath = join(root, ".code-understanding");
+  const excludePath = join(root, ".git/info/exclude");
+  await writeFile(excludePath, prior);
+  const fsOps = {
+    ...fs,
+    async rename(from, to) {
+      if (from.includes(".code-understanding.tmp-") && to.endsWith(".code-understanding")) {
+        throw new Error("injected publication failure");
+      }
+      return fs.rename(from, to);
+    }
+  };
+
+  await expect(publishArtifacts({ targetRoot: root, outputPath, artifacts: createArtifactFixture(), tracked, fsOps }))
+    .rejects.toThrow("injected publication failure");
+
+  expect(await readFile(excludePath)).toEqual(prior);
+});
+
+test("restores prior exclude nonexistence when publication fails", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const outputPath = join(root, ".code-understanding");
+  const excludePath = join(root, ".git/info/exclude");
+  await fs.rm(excludePath);
+  const fsOps = {
+    ...fs,
+    async rename(from, to) {
+      if (from.includes(".code-understanding.tmp-") && to.endsWith(".code-understanding")) {
+        throw new Error("injected publication failure");
+      }
+      return fs.rename(from, to);
+    }
+  };
+
+  await expect(publishArtifacts({ targetRoot: root, outputPath, artifacts: createArtifactFixture(), tracked: false, fsOps }))
+    .rejects.toThrow("injected publication failure");
+
+  expect(await fs.stat(excludePath).catch((error) => error.code)).toBe("ENOENT");
 });

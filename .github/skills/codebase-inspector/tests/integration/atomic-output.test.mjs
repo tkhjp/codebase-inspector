@@ -51,7 +51,7 @@ test("publication restores the backup when final rename fails", async () => {
   const fsOps = {
     ...fs,
     async rename(from, to) {
-      if (!failed && from.includes(".tmp-") && to === outputPath) {
+      if (!failed && from.includes(".tmp-") && to.endsWith(".code-understanding")) {
         failed = true;
         throw new Error("injected final rename failure");
       }
@@ -79,4 +79,106 @@ test("schema-invalid artifacts are rejected before prior output is touched", asy
 
   expect(await readdir(outputPath)).toEqual(["sentinel.txt"]);
   expect(await readFile(join(outputPath, "sentinel.txt"), "utf8")).toBe("old-output\n");
+});
+
+test("post-commit partial backup cleanup failure retains the new valid output", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const outputPath = join(root, ".code-understanding");
+  await fs.mkdir(outputPath);
+  await writeFile(join(outputPath, "sentinel.txt"), "old-output\n");
+  const cleanupError = new Error("partial backup cleanup failed");
+  const fsOps = {
+    ...fs,
+    async rm(path, options) {
+      if (path.includes(".backup-") && options?.recursive) {
+        await fs.rm(join(path, "sentinel.txt"), { force: true });
+        throw cleanupError;
+      }
+      return fs.rm(path, options);
+    }
+  };
+
+  let caught;
+  try {
+    await publishArtifacts({ targetRoot: root, outputPath, artifacts: createArtifactFixture("new-output"), tracked: false, fsOps });
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught).toBeInstanceOf(AggregateError);
+  expect(caught.errors).toContain(cleanupError);
+  expect((await readdir(outputPath)).sort()).toEqual([
+    "analysis-report.json", "classes.md", "code-graph.json", "functions.md", "methods.md", "symbol-index.json"
+  ]);
+  expect(await readFile(join(outputPath, "classes.md"), "utf8")).toContain("new-output");
+});
+
+test("aggregates the primary publication error before every independent cleanup failure", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const outputPath = join(root, ".code-understanding");
+  await fs.mkdir(outputPath);
+  await writeFile(join(outputPath, "sentinel.txt"), "old-output\n");
+  const excludePath = join(root, ".git/info/exclude");
+  await writeFile(excludePath, "before\n");
+  const primaryError = new Error("final rename failed");
+  const outputRestoreError = new Error("output restore failed");
+  const excludeRestoreError = new Error("exclude restore failed");
+  const temporaryCleanupError = new Error("temporary cleanup failed");
+  const excludeTemporaryCleanupError = new Error("exclude temporary cleanup failed");
+  const excludeRestoreCleanupError = new Error("exclude restore cleanup failed");
+  const attempts = [];
+  const fsOps = {
+    ...fs,
+    async rename(from, to) {
+      if (from.includes(".code-understanding.tmp-") && to.endsWith(".code-understanding")) throw primaryError;
+      if (from.includes(".code-understanding.backup-") && to.endsWith(".code-understanding")) {
+        attempts.push("output-restore");
+        throw outputRestoreError;
+      }
+      if (from.includes("exclude.restore-")) {
+        attempts.push("exclude-restore");
+        throw excludeRestoreError;
+      }
+      return fs.rename(from, to);
+    },
+    async rm(path, options) {
+      if (path.includes(".code-understanding.tmp-")) {
+        attempts.push("temporary-cleanup");
+        throw temporaryCleanupError;
+      }
+      if (path.includes("exclude.tmp-")) {
+        attempts.push("exclude-temporary-cleanup");
+        throw excludeTemporaryCleanupError;
+      }
+      if (path.includes("exclude.restore-")) {
+        attempts.push("exclude-restore-cleanup");
+        throw excludeRestoreCleanupError;
+      }
+      return fs.rm(path, options);
+    }
+  };
+
+  let caught;
+  try {
+    await publishArtifacts({ targetRoot: root, outputPath, artifacts: createArtifactFixture(), tracked: false, fsOps });
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught).toBeInstanceOf(AggregateError);
+  expect(caught.errors).toEqual([
+    primaryError,
+    outputRestoreError,
+    excludeRestoreError,
+    temporaryCleanupError,
+    excludeTemporaryCleanupError,
+    excludeRestoreCleanupError
+  ]);
+  expect(attempts).toEqual([
+    "output-restore",
+    "exclude-restore",
+    "temporary-cleanup",
+    "exclude-temporary-cleanup",
+    "exclude-restore-cleanup"
+  ]);
 });

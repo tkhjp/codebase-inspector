@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
+import { resolveOutputBoundary } from "../runtime/path-boundary.mjs";
 import { parseAnalysisReport } from "../schema/analysis-report.mjs";
 import { parseCodeGraph } from "../schema/code-graph.mjs";
 import { parseSymbolIndex } from "../schema/symbol-index.mjs";
@@ -23,12 +24,6 @@ const jsonValidators = new Map([
   ["code-graph.json", parseCodeGraph],
   ["symbol-index.json", parseSymbolIndex]
 ]);
-
-function isWithin(root, candidate, { allowRoot = true } = {}) {
-  const difference = relative(root, candidate);
-  return (allowRoot && difference === "")
-    || (difference !== "" && !difference.startsWith("..") && !isAbsolute(difference));
-}
 
 function validateArtifacts(artifacts) {
   if (!(artifacts instanceof Map)) throw new Error("Artifacts must be a Map");
@@ -72,37 +67,36 @@ function removeOwnedBlocks(content) {
   return retained.join("\n");
 }
 
-async function gitExcludePath(targetRoot) {
-  const { stdout } = await execFile("git", ["-C", targetRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" });
-  const path = stdout.trim();
-  return isAbsolute(path) ? path : join(targetRoot, path);
+async function gitPublicationPaths(targetRoot) {
+  const [gitDirResult, excludeResult] = await Promise.all([
+    execFile("git", ["-C", targetRoot, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }),
+    execFile("git", ["-C", targetRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" })
+  ]);
+  const excludePath = excludeResult.stdout.trim();
+  return {
+    gitDir: gitDirResult.stdout.trim(),
+    excludePath: isAbsolute(excludePath) ? excludePath : join(targetRoot, excludePath)
+  };
 }
 
-async function updateLocalExclude({ targetRoot, outputPath, tracked, fsOps, token }) {
-  const excludePath = await gitExcludePath(targetRoot);
-  let current = "";
+async function captureFile(path, fsOps) {
   try {
-    current = await fsOps.readFile(excludePath, "utf8");
+    return { exists: true, bytes: Buffer.from(await fsOps.readFile(path)) };
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (error.code === "ENOENT") return { exists: false, bytes: Buffer.alloc(0) };
+    throw error;
   }
+}
 
-  let updated = removeOwnedBlocks(current);
+function desiredExclude(snapshot, targetRoot, outputPath, tracked) {
+  let updated = removeOwnedBlocks(snapshot.bytes.toString("utf8"));
   if (!tracked) {
     const outputRelativePath = relative(targetRoot, outputPath).split("\\").join("/");
     const separator = updated.length > 0 && !updated.endsWith("\n") ? "\n" : "";
     updated = `${updated}${separator}${ownedBlock(outputRelativePath)}\n`;
   }
-  if (updated === current) return;
-
-  await fsOps.mkdir(dirname(excludePath), { recursive: true });
-  const temporaryPath = `${excludePath}.tmp-${token}`;
-  await fsOps.writeFile(temporaryPath, updated, "utf8");
-  try {
-    await fsOps.rename(temporaryPath, excludePath);
-  } finally {
-    await fsOps.rm(temporaryPath, { force: true });
-  }
+  const bytes = Buffer.from(updated, "utf8");
+  return { bytes, changed: !snapshot.bytes.equals(bytes) };
 }
 
 async function pathExists(path, fsOps) {
@@ -115,50 +109,106 @@ async function pathExists(path, fsOps) {
   }
 }
 
-export async function publishArtifacts({ targetRoot, outputPath, artifacts, tracked, fsOps = fs }) {
-  if (!isWithin(targetRoot, outputPath, { allowRoot: false })) {
-    throw new Error("Output path must stay inside target root");
+async function attempt(errors, action) {
+  try {
+    await action();
+    return true;
+  } catch (error) {
+    errors.push(error);
+    return false;
   }
+}
+
+function throwFailures(primaryError, cleanupErrors, committed) {
+  if (primaryError && cleanupErrors.length > 0) {
+    throw new AggregateError([primaryError, ...cleanupErrors], "Publication failed and cleanup also failed");
+  }
+  if (primaryError) throw primaryError;
+  if (cleanupErrors.length > 0) {
+    const message = committed ? "Publication committed with cleanup failures" : "Publication cleanup failed";
+    throw new AggregateError(cleanupErrors, message);
+  }
+}
+
+export async function publishArtifacts({ targetRoot, outputPath, artifacts, tracked, fsOps = fs }) {
   validateArtifacts(artifacts);
+  const gitPaths = await gitPublicationPaths(targetRoot);
+  const boundary = await resolveOutputBoundary({
+    targetRoot,
+    outputPath,
+    gitDir: gitPaths.gitDir,
+    fsOps
+  });
+  targetRoot = boundary.targetRoot;
+  outputPath = boundary.outputPath;
 
   const token = randomUUID();
   const outputParent = dirname(outputPath);
   const outputName = basename(outputPath);
   const temporaryPath = join(outputParent, `${outputName}.tmp-${token}`);
   const backupPath = join(outputParent, `${outputName}.backup-${token}`);
+  const excludeTemporaryPath = `${gitPaths.excludePath}.tmp-${token}`;
+  const excludeRestorePath = `${gitPaths.excludePath}.restore-${token}`;
+  let excludeSnapshot;
+  let excludeUpdate;
+  let excludeMutationAttempted = false;
   let backupCreated = false;
-  let outputPublished = false;
+  let committed = false;
+  let primaryError;
 
-  await fsOps.mkdir(outputParent, { recursive: true });
-  await fsOps.mkdir(temporaryPath);
   try {
-    await Promise.all(artifactNames.map((name) => fsOps.writeFile(join(temporaryPath, name), artifacts.get(name), "utf8")));
-    await updateLocalExclude({ targetRoot, outputPath, tracked, fsOps, token });
+    excludeSnapshot = await captureFile(gitPaths.excludePath, fsOps);
+    excludeUpdate = desiredExclude(excludeSnapshot, targetRoot, outputPath, tracked);
+    await fsOps.mkdir(outputParent, { recursive: true });
+    await fsOps.mkdir(temporaryPath);
+    for (const name of artifactNames) {
+      await fsOps.writeFile(join(temporaryPath, name), artifacts.get(name), "utf8");
+    }
+
+    if (excludeUpdate.changed) {
+      excludeMutationAttempted = true;
+      await fsOps.mkdir(dirname(gitPaths.excludePath), { recursive: true });
+      await fsOps.writeFile(excludeTemporaryPath, excludeUpdate.bytes);
+      await fsOps.rename(excludeTemporaryPath, gitPaths.excludePath);
+    }
 
     if (await pathExists(outputPath, fsOps)) {
       await fsOps.rename(outputPath, backupPath);
       backupCreated = true;
     }
     await fsOps.rename(temporaryPath, outputPath);
-    outputPublished = true;
-
-    if (backupCreated) {
-      await fsOps.rm(backupPath, { recursive: true, force: true });
-      backupCreated = false;
-    }
+    committed = true;
   } catch (error) {
+    primaryError = error;
+  }
+
+  const cleanupErrors = [];
+  if (committed) {
     if (backupCreated) {
-      try {
-        if (outputPublished) await fsOps.rm(outputPath, { recursive: true, force: true });
-        await fsOps.rename(backupPath, outputPath);
-        backupCreated = false;
-      } catch (restoreError) {
-        throw new AggregateError([error, restoreError], "Publication failed and prior output could not be restored");
+      const removed = await attempt(cleanupErrors, () => fsOps.rm(backupPath, { recursive: true, force: true }));
+      if (removed) backupCreated = false;
+    }
+  } else {
+    if (backupCreated) {
+      const restored = await attempt(cleanupErrors, () => fsOps.rename(backupPath, outputPath));
+      if (restored) backupCreated = false;
+    }
+    if (excludeMutationAttempted) {
+      if (excludeSnapshot.exists) {
+        await attempt(cleanupErrors, async () => {
+          await fsOps.writeFile(excludeRestorePath, excludeSnapshot.bytes);
+          await fsOps.rename(excludeRestorePath, gitPaths.excludePath);
+        });
+      } else {
+        await attempt(cleanupErrors, () => fsOps.rm(gitPaths.excludePath, { force: true }));
       }
     }
-    throw error;
-  } finally {
-    await fsOps.rm(temporaryPath, { recursive: true, force: true });
-    if (!backupCreated) await fsOps.rm(backupPath, { recursive: true, force: true });
   }
+
+  await attempt(cleanupErrors, () => fsOps.rm(temporaryPath, { recursive: true, force: true }));
+  await attempt(cleanupErrors, () => fsOps.rm(excludeTemporaryPath, { force: true }));
+  await attempt(cleanupErrors, () => fsOps.rm(excludeRestorePath, { force: true }));
+  if (!backupCreated) await attempt(cleanupErrors, () => fsOps.rm(backupPath, { recursive: true, force: true }));
+
+  throwFailures(primaryError, cleanupErrors, committed);
 }

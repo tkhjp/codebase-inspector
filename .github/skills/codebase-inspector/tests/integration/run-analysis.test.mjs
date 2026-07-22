@@ -1,6 +1,7 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { readFile, readdir, realpath } from "node:fs/promises";
+import { execFile as execFileCallback, fork, spawn } from "node:child_process";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
@@ -11,6 +12,7 @@ import { createFixtureRepo } from "../helpers/fixture-repo.mjs";
 const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const runScript = join(skillDir, "scripts/run.mjs");
+const processRunner = join(skillDir, "tests/integration/run-analysis-process.mjs");
 const artifactNames = [
   "analysis-report.json",
   "classes.md",
@@ -22,6 +24,37 @@ const artifactNames = [
 
 async function runCli(root, args = []) {
   return execFile(process.execPath, [runScript, root, ...args], { encoding: "utf8" });
+}
+
+function runCliResult(root) {
+  return new Promise((resolveResult) => {
+    const child = spawn(process.execPath, [runScript, root], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (code) => resolveResult({ code, stdout, stderr }));
+  });
+}
+
+function waitForLock(child) {
+  return new Promise((resolveLock, rejectLock) => {
+    const timeout = setTimeout(() => rejectLock(new Error("timed out waiting for process lock")), 10_000);
+    child.on("message", (message) => {
+      if (message?.type === "lock-acquired") {
+        clearTimeout(timeout);
+        resolveLock();
+      }
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timeout);
+      rejectLock(new Error(`blocking process exited before lock acquisition: ${code}`));
+    });
+  });
+}
+
+function waitForExit(child) {
+  return new Promise((resolveExit) => child.on("exit", (code) => resolveExit(code)));
 }
 
 test("runs the standalone analysis and writes exactly six deterministic artifacts", async () => {
@@ -131,3 +164,22 @@ test("preflight resolves Git metadata and rejects output outside the target root
     keepIntermediate: false
   }, skillDir)).rejects.toThrow(/output path must not be inside the Git directory/i);
 });
+
+test("two CLI processes contend deterministically and a third succeeds after release", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const first = fork(processRunner, [root], { silent: true });
+  const firstExit = waitForExit(first);
+  await waitForLock(first);
+
+  const second = await runCliResult(root);
+  expect(second.code).not.toBe(0);
+  expect(second.stderr).toContain("analysis already running");
+
+  first.send({ type: "release" });
+  expect(await firstExit).toBe(0);
+
+  const third = await runCliResult(root);
+  expect(third.code).toBe(0);
+  expect(third.stdout).toMatch(/Codebase Inspector: complete/);
+  expect(await stat(join(root, ".git/codebase-inspector.lock")).catch((error) => error.code)).toBe("ENOENT");
+}, 15_000);

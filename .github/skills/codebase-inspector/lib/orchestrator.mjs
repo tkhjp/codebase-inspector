@@ -13,44 +13,72 @@ function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export async function runAnalysis(runConfig) {
-  return withAnalysisLock(runConfig.gitDir, async () => {
-    const scan = await scanProject(runConfig);
-    const registry = await createParserRegistry(runConfig.skillDir);
+export async function runAnalysis(runConfig, dependencies = {}) {
+  const lock = dependencies.withAnalysisLock ?? withAnalysisLock;
+  const scan = dependencies.scanProject ?? scanProject;
+  const createRegistry = dependencies.createParserRegistry ?? createParserRegistry;
+  const buildIndex = dependencies.buildSymbolIndex ?? buildSymbolIndex;
+  const buildGraph = dependencies.buildCodeGraph ?? buildCodeGraph;
+  const buildReport = dependencies.buildAnalysisReport ?? buildAnalysisReport;
+  const renderMarkdown = dependencies.renderMarkdownIndexes ?? renderMarkdownIndexes;
+  const serialize = dependencies.serializeArtifacts ?? serializeArtifacts;
+  const publish = dependencies.publishArtifacts ?? publishArtifacts;
+
+  return lock(runConfig.gitDir, async () => {
+    await dependencies.onLockAcquired?.();
+    const scanResult = await scan(runConfig);
+    const registry = await createRegistry(runConfig.skillDir);
+    let prepared;
+    let analysisError;
     try {
-      const analyses = await Promise.all(scan.files.map((file) => registry.analyzeFile(file)));
+      const analyses = await Promise.all(scanResult.files.map((file) => registry.analyzeFile(file)));
       const project = {
         ...runConfig,
         name: basename(runConfig.targetRoot),
         root: null,
-        workingTreeDirty: scan.git.dirty,
-        languages: [...new Set(scan.files.map((file) => file.language))].sort(compareText)
+        workingTreeDirty: scanResult.git.dirty,
+        languages: [...new Set(scanResult.files.map((file) => file.language))].sort(compareText)
       };
-      const { symbolIndex, relationshipCounts } = buildSymbolIndex({
+      const { symbolIndex, relationshipCounts } = buildIndex({
         project,
-        scan,
+        scan: scanResult,
         analyses,
         skillVersion: "0.1.0"
       });
-      const codeGraph = buildCodeGraph(symbolIndex, { analyzedAt: runConfig.gitCommitTimestamp });
-      const report = buildAnalysisReport({
+      const codeGraph = buildGraph(symbolIndex, { analyzedAt: runConfig.gitCommitTimestamp });
+      const report = buildReport({
         symbolIndex,
-        scan,
+        scan: scanResult,
         analyses,
         relationshipCounts,
         options: runConfig.options
       });
-      const markdown = renderMarkdownIndexes(symbolIndex);
-      const artifacts = serializeArtifacts({ symbolIndex, codeGraph, report, markdown });
-      await publishArtifacts({
-        targetRoot: runConfig.targetRoot,
-        outputPath: runConfig.outputPath,
-        artifacts,
-        tracked: runConfig.options.tracked
-      });
-      return { status: report.status, outputPath: runConfig.outputPath };
-    } finally {
-      await registry.close();
+      const markdown = renderMarkdown(symbolIndex);
+      const artifacts = serialize({ symbolIndex, codeGraph, report, markdown });
+      prepared = { artifacts, status: report.status };
+    } catch (error) {
+      analysisError = error;
     }
+
+    let closeError;
+    try {
+      await registry.close();
+    } catch (error) {
+      closeError = error;
+    }
+
+    if (analysisError && closeError) {
+      throw new AggregateError([analysisError, closeError], "Analysis and parser registry close failed");
+    }
+    if (analysisError) throw analysisError;
+    if (closeError) throw closeError;
+
+    await publish({
+      targetRoot: runConfig.targetRoot,
+      outputPath: runConfig.outputPath,
+      artifacts: prepared.artifacts,
+      tracked: runConfig.options.tracked
+    });
+    return { status: prepared.status, outputPath: runConfig.outputPath };
   });
 }
