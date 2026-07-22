@@ -12,6 +12,15 @@ function compareSymbols(left, right) {
     || compareText(left.id, right.id);
 }
 
+function compareRawMethods(left, right) {
+  return compareText(left.ownerName, right.ownerName)
+    || compareText(left.name, right.name)
+    || left.lineRange[0] - right.lineRange[0]
+    || left.lineRange[1] - right.lineRange[1]
+    || compareText(JSON.stringify(left.parameters), JSON.stringify(right.parameters))
+    || compareText(left.returnType ?? "", right.returnType ?? "");
+}
+
 function callableFields(raw, id, filePath) {
   return {
     id,
@@ -89,12 +98,17 @@ export function buildSymbolIndex({ project, scan, analyses, skillVersion }) {
       typesByName.set(type.name, matches);
     }
 
-    const methodsForFile = analysis.methods.map((raw) => {
+    const methodIdCounts = new Map();
+    const methodsForFile = [...analysis.methods].sort(compareRawMethods).map((raw) => {
       const owners = typesByName.get(raw.ownerName) ?? [];
       if (owners.length !== 1) throw new Error(`Method owner is not unique in ${analysis.filePath}: ${raw.ownerName}`);
       const owner = owners[0];
+      const baseId = stableId("method", analysis.filePath, raw.ownerName, raw.name, raw.lineRange[0]);
+      const occurrence = (methodIdCounts.get(baseId) ?? 0) + 1;
+      methodIdCounts.set(baseId, occurrence);
+      const id = occurrence === 1 ? baseId : `${baseId}:overload:${occurrence}`;
       const method = {
-        ...callableFields(raw, stableId("method", analysis.filePath, raw.ownerName, raw.name, raw.lineRange[0]), analysis.filePath),
+        ...callableFields(raw, id, analysis.filePath),
         ownerTypeId: owner.id,
         static: raw.static
       };

@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, symlink } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,4 +45,22 @@ test.skipIf(process.platform === "win32")("publisher independently enforces the 
 
   await expect(publishArtifacts({ targetRoot: root, outputPath: join(root, "..reports"), artifacts, tracked: false }))
     .resolves.toBeUndefined();
+});
+
+test.skipIf(process.platform === "win32")("publisher rejects an info exclude symlink outside the common Git directory", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const outside = await mkdtemp(join(tmpdir(), "codebase-inspector-exclude-"));
+  const externalExclude = join(outside, "exclude");
+  const excludePath = join(root, ".git/info/exclude");
+  await writeFile(externalExclude, "external sentinel\n");
+  await unlink(excludePath);
+  await symlink(externalExclude, excludePath);
+
+  await expect(publishArtifacts({
+    targetRoot: root,
+    outputPath: join(root, ".code-understanding"),
+    artifacts: createArtifactFixture(),
+    tracked: false
+  })).rejects.toThrow(/exclude.*common Git directory/i);
+  expect(await readFile(externalExclude, "utf8")).toBe("external sentinel\n");
 });

@@ -40,6 +40,7 @@ const original = {
 const gitOperations = new Set([
   ["rev-parse", "--show-toplevel"],
   ["rev-parse", "--absolute-git-dir"],
+  ["rev-parse", "--path-format=absolute", "--git-common-dir"],
   ["ls-files", "-z"],
   ["rev-parse", "HEAD"],
   ["show", "-s", "--format=%cI", "HEAD"],

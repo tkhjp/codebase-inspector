@@ -22,10 +22,14 @@ test("Skill instructions use repository-root transport without executing argumen
   expect(skill).toContain(String.raw`"C:\Program Files\repo\"`);
   expect(skill).toContain(`use \`${embeddedQuote}\` before more token content`);
   expect(skill).toContain(`use \`${terminalEmbeddedQuote}\` at the token end`);
+  expect(skill).toContain("A literal double quote immediately before whitespace in the same token requires single quotes around the payload token");
+  expect(skill).toContain(String.raw`'C:\Program Files\name" next'`);
   expect(skillJapanese).toContain(`二重引用符 token 末尾の \`${embeddedQuote}\` は、バックスラッシュを保持して token を閉じます`);
   expect(skillJapanese).toContain(String.raw`"C:\Program Files\repo\"`);
   expect(skillJapanese).toContain(`token の途中では \`${embeddedQuote}\``);
   expect(skillJapanese).toContain(`token 末尾では \`${terminalEmbeddedQuote}\``);
+  expect(skillJapanese).toContain("同じ token 内でリテラルの二重引用符の直後に空白を置く場合は、token 全体を一重引用符で囲む必要があります");
+  expect(skillJapanese).toContain(String.raw`'C:\Program Files\name" next'`);
 });
 
 test("Skill and root documentation describe tracked scanning and output modes accurately", async () => {

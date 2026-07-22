@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import { createFixtureRepo } from "../helpers/fixture-repo.mjs";
 import { scanProject } from "../../lib/scanner/scan.mjs";
 import { isWorkingTreeDirty } from "../../lib/scanner/git-files.mjs";
+import { normalizeRelativePath } from "../../lib/scanner/ignore-rules.mjs";
 
 function runConfig(root, options = {}) {
   return { targetRoot: root, gitDir: join(root, ".git"), options };
@@ -203,4 +204,22 @@ it.skipIf(process.platform === "win32")("warns and skips a tracked POSIX path co
 
   expect(result.files.map((file) => file.path)).toEqual(["src/a.ts"]);
   expect(result.warnings).toContainEqual(expect.stringMatching(/src\\a\.ts.*backslash/));
+});
+
+it("accepts a tracked path whose segment starts with two dots", async () => {
+  const root = await createFixtureRepo({ "..reports/a.ts": "export const report = true;\n" });
+
+  const result = await scanProject(runConfig(root));
+
+  expect(result.files.map((file) => file.path)).toEqual(["..reports/a.ts"]);
+  expect(result.warnings).toEqual([]);
+});
+
+it.each([
+  "../a.ts",
+  "a/../b.ts",
+  String.raw`..\a.ts`,
+  String.raw`a\..\b.ts`
+])("rejects an actual parent traversal component in %j", (path) => {
+  expect(normalizeRelativePath(path)).toBeNull();
 });

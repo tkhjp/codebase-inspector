@@ -95,10 +95,15 @@ export async function createTreeSitterRuntime(skillDir, extractors) {
         parser.setLanguage(language);
         tree = parser.parse(normalizedContent(file.content));
         if (!tree) return emptyAnalysis(file, `Tree-sitter could not parse ${file.path}`);
-        return parseRawFileAnalysis(adapter.extract(tree.rootNode, {
+        const rootNode = tree.rootNode;
+        const analysis = adapter.extract(rootNode, {
           filePath: file.path,
           language: file.language
-        }));
+        });
+        if (rootNode.hasError) {
+          analysis.warnings = [...analysis.warnings, `Tree-sitter syntax errors in ${file.path}`];
+        }
+        return parseRawFileAnalysis(analysis);
       } catch {
         return emptyAnalysis(file, `Tree-sitter analysis failed for ${file.path}`);
       } finally {

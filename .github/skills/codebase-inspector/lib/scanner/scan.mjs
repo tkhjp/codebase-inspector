@@ -1,13 +1,9 @@
 import * as fs from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { classifyFile, detectLanguage } from "./languages.mjs";
 import { createIgnoreMatcher, normalizeRelativePath } from "./ignore-rules.mjs";
 import { getGitMetadata } from "./git-files.mjs";
-
-function isWithinRoot(root, path) {
-  const difference = relative(root, path);
-  return difference === "" || (!difference.startsWith("..") && !isAbsolute(difference));
-}
+import { isPathWithin } from "../runtime/path-boundary.mjs";
 
 function normalizedText(buffer) {
   return Buffer.from(buffer).toString("utf8").replace(/\r\n?/g, "\n");
@@ -42,7 +38,7 @@ export async function scanProject(runConfig, { fsOps = fs } = {}) {
     if (shouldIgnore(path)) continue;
 
     const workingPath = resolve(git.root, path);
-    if (!isWithinRoot(git.root, workingPath)) {
+    if (!isPathWithin(git.root, workingPath)) {
       warnings.push(warningFor(path, "path escapes repository boundary"));
       continue;
     }
@@ -67,7 +63,7 @@ export async function scanProject(runConfig, { fsOps = fs } = {}) {
       warnings.push(warningFor(path, `symlink could not be resolved (${error.code ?? error.message})`));
       continue;
     }
-    if (!isWithinRoot(rootRealPath, resolvedPath)) {
+    if (!isPathWithin(rootRealPath, resolvedPath)) {
       warnings.push(warningFor(path, "symlink escapes repository boundary"));
       continue;
     }

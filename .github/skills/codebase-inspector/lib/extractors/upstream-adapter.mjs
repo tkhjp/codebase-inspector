@@ -10,21 +10,66 @@ function toRawFunction(entry, exported) {
   };
 }
 
-function ownershipWarnings(structure) {
-  const ownersByMethod = new Map();
+function containsLineRange(owner, callable) {
+  return callable.lineRange[0] >= owner.lineRange[0] && callable.lineRange[1] <= owner.lineRange[1];
+}
+
+function candidateOwners(structure, callable, callableNameCounts) {
+  const declared = structure.classes.filter((owner) => owner.methods.includes(callable.name));
+  const eligible = declared.filter((owner) => containsLineRange(owner, callable));
+  if (eligible.length === 0 && declared.length === 1 && callableNameCounts.get(callable.name) === 1) return declared;
+  if (eligible.length < 2) return eligible;
+  const smallestSpan = Math.min(...eligible.map((owner) => owner.lineRange[1] - owner.lineRange[0]));
+  return eligible.filter((owner) => owner.lineRange[1] - owner.lineRange[0] === smallestSpan);
+}
+
+function adaptCallables(structure, exported) {
+  const callableNameCounts = new Map();
+  structure.functions.forEach((callable) => callableNameCounts.set(callable.name, (callableNameCounts.get(callable.name) ?? 0) + 1));
+  const ownership = structure.functions.map((callable) => candidateOwners(structure, callable, callableNameCounts));
+  const consumed = new Set();
+  const warnings = [];
+  const ambiguous = new Map();
+  ownership.forEach((owners, index) => {
+    if (owners.length < 2) return;
+    const name = structure.functions[index].name;
+    const names = ambiguous.get(name) ?? new Set();
+    owners.forEach((owner) => names.add(owner.name));
+    ambiguous.set(name, names);
+  });
+
+  const methods = [];
   for (const owner of structure.classes) {
-    for (const method of owner.methods) {
-      const owners = ownersByMethod.get(method) ?? [];
-      owners.push(owner.name);
-      ownersByMethod.set(method, owners);
+    for (const name of owner.methods) {
+      const callableIndex = structure.functions.findIndex((entry, index) => (
+        !consumed.has(index)
+        && entry.name === name
+        && ownership[index].length === 1
+        && ownership[index][0] === owner
+      ));
+      const callable = callableIndex === -1 ? null : structure.functions[callableIndex];
+      if (callable) consumed.add(callableIndex);
+      else if (!ambiguous.has(name)) warnings.push(`Upstream method ${owner.name}.${name} has no callable detail record`);
+      methods.push({
+        name,
+        ownerName: owner.name,
+        lineRange: callable?.lineRange ?? owner.lineRange,
+        parameters: (callable?.params ?? []).map((parameter) => ({ name: parameter, type: null })),
+        returnType: callable?.returnType ?? null,
+        visibility: null,
+        async: null,
+        exported: exported.has(name) ? true : null,
+        static: null
+      });
     }
   }
-  return [...ownersByMethod]
-    .filter(([method, owners]) => owners.length > 1 || !structure.functions.some((entry) => entry.name === method))
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([method, owners]) => owners.length > 1
-      ? `Upstream ownership is ambiguous for method ${method}: ${owners.sort().join(", ")}`
-      : `Upstream method ${owners[0]}.${method} has no callable detail record`);
+  for (const [name, owners] of [...ambiguous].sort(([left], [right]) => left.localeCompare(right))) {
+    warnings.push(`Upstream ownership is ambiguous for method ${name}: ${[...owners].sort().join(", ")}`);
+  }
+  const functions = structure.functions
+    .filter((_entry, index) => !consumed.has(index))
+    .map((entry) => toRawFunction(entry, exported));
+  return { methods, functions, warnings };
 }
 
 export function createUpstreamAdapter(extractor) {
@@ -33,7 +78,7 @@ export function createUpstreamAdapter(extractor) {
       const structure = extractor.extractStructure(rootNode);
       const calls = extractor.extractCallGraph(rootNode);
       const exported = new Set(structure.exports.map((entry) => entry.name));
-      const ownedNames = new Set(structure.classes.flatMap((entry) => entry.methods));
+      const callables = adaptCallables(structure, exported);
 
       const types = structure.classes.map((entry) => ({
         kind: "class",
@@ -45,30 +90,12 @@ export function createUpstreamAdapter(extractor) {
         exported: exported.has(entry.name) ? true : null
       }));
 
-      const methods = [];
-      for (const owner of structure.classes) {
-        for (const name of owner.methods) {
-          const callable = structure.functions.find((entry) => entry.name === name);
-          methods.push({
-            name,
-            ownerName: owner.name,
-            lineRange: callable?.lineRange ?? owner.lineRange,
-            parameters: (callable?.params ?? []).map((parameter) => ({ name: parameter, type: null })),
-            returnType: callable?.returnType ?? null,
-            visibility: null,
-            async: null,
-            exported: exported.has(name) ? true : null,
-            static: null
-          });
-        }
-      }
-
       return {
         filePath,
         language,
         types,
-        methods,
-        functions: structure.functions.filter((entry) => !ownedNames.has(entry.name)).map((entry) => toRawFunction(entry, exported)),
+        methods: callables.methods,
+        functions: callables.functions,
         importCandidates: structure.imports.map((entry) => ({ ...entry, kind: "module" })),
         callCandidates: calls.map((entry) => ({
           callerName: entry.caller || null,
@@ -76,7 +103,7 @@ export function createUpstreamAdapter(extractor) {
           calleeText: entry.callee,
           lineNumber: entry.lineNumber
         })),
-        warnings: ownershipWarnings(structure)
+        warnings: callables.warnings
       };
     }
   };

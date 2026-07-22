@@ -22,9 +22,10 @@ export async function preflight(options, skillDir) {
   const boundary = await resolveOutputBoundary({
     targetRoot: await realpath(git.root),
     outputPath: resolve(git.root, options.output),
-    gitDir: await realpath(git.gitDir)
+    gitDir: await realpath(git.gitDir),
+    gitCommonDir: await realpath(git.commonDir)
   });
-  const { targetRoot, outputPath, gitDir } = boundary;
+  const { targetRoot, outputPath, gitDir, gitCommonDir } = boundary;
   const outputParent = await nearestExistingPath(dirname(outputPath));
   await access(outputParent.realPath, constants.W_OK);
 
@@ -34,6 +35,7 @@ export async function preflight(options, skillDir) {
     targetRoot,
     outputPath,
     gitDir,
+    gitCommonDir,
     gitCommitHash: git.commitHash,
     gitCommitTimestamp: git.commitTimestamp,
     options: {

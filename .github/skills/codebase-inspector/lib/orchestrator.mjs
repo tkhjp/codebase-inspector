@@ -24,7 +24,7 @@ export async function runAnalysis(runConfig, dependencies = {}) {
   const serialize = dependencies.serializeArtifacts ?? serializeArtifacts;
   const publish = dependencies.publishArtifacts ?? publishArtifacts;
 
-  return lock(runConfig.gitDir, async () => {
+  const analyze = async () => lock(runConfig.gitDir, async () => {
     await dependencies.onLockAcquired?.();
     const scanResult = await scan(runConfig);
     const registry = await createRegistry(runConfig.skillDir);
@@ -81,4 +81,5 @@ export async function runAnalysis(runConfig, dependencies = {}) {
     });
     return { status: prepared.status, outputPath: runConfig.outputPath };
   });
+  return lock(runConfig.gitCommonDir ?? runConfig.gitDir, analyze, { lockName: "codebase-inspector-common.lock" });
 }

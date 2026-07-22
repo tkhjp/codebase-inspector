@@ -148,3 +148,22 @@ test("produces the same canonical index for reordered scan and analysis inputs",
 
   expect(right).toEqual(left);
 });
+
+test("uses deterministic unique IDs when overloads share a start line", () => {
+  const overloaded = {
+    ...analysis,
+    warnings: [],
+    methods: [
+      { ...callable("run", [5, 9]), ownerName: "Greeter", static: null },
+      { ...callable("run", [5, 10]), ownerName: "Greeter", static: null, parameters: [{ name: "value", type: null }] }
+    ],
+    functions: []
+  };
+
+  const first = buildSymbolIndex({ project, scan, analyses: [overloaded], skillVersion: "0.1.0" }).symbolIndex;
+  const second = buildSymbolIndex({ project, scan, analyses: [overloaded], skillVersion: "0.1.0" }).symbolIndex;
+
+  expect(first.methods).toHaveLength(2);
+  expect(new Set(first.methods.map((method) => method.id)).size).toBe(2);
+  expect(second.methods).toEqual(first.methods);
+});

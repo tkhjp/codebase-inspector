@@ -30,9 +30,10 @@ export function isWorkingTreeDirty(statusOutput, ignoredPaths) {
 
 export async function getGitMetadata(targetRoot, { ignoredPaths = [] } = {}) {
   const commandRoot = resolve(targetRoot);
-  const [rootOutput, gitDirOutput, trackedOutput, commitHashOutput, commitTimestampOutput, statusOutput] = await Promise.all([
+  const [rootOutput, gitDirOutput, commonDirOutput, trackedOutput, commitHashOutput, commitTimestampOutput, statusOutput] = await Promise.all([
     runGit(commandRoot, ["rev-parse", "--show-toplevel"]),
     runGit(commandRoot, ["rev-parse", "--absolute-git-dir"]),
+    runGit(commandRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"]),
     runGit(commandRoot, ["ls-files", "-z"]),
     runGit(commandRoot, ["rev-parse", "HEAD"]),
     runGit(commandRoot, ["show", "-s", "--format=%cI", "HEAD"]),
@@ -44,6 +45,7 @@ export async function getGitMetadata(targetRoot, { ignoredPaths = [] } = {}) {
   return {
     root,
     gitDir: resolve(gitDirOutput.trim()),
+    commonDir: resolve(commonDirOutput.trim()),
     trackedPaths: trackedOutput.split("\0").filter(Boolean).sort(),
     commitHash: commitHashOutput.trim(),
     commitTimestamp: commitTimestampOutput.trim(),

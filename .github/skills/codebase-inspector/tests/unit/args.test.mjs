@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../../lib/cli/args.mjs";
 import { main } from "../../scripts/run.mjs";
@@ -129,6 +131,25 @@ describe("parseArgs", () => {
 
     expect(result.code).toBe(0);
     expect(result.options.targetPath).toBe(resolve(cwd, expectedPath));
+  });
+
+  it("requires single quotes for a literal double quote immediately before token whitespace without shell execution", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "codebase-inspector-args-"));
+    const sentinel = join(temp, "must-not-exist");
+    const target = `project" > ${sentinel}`;
+
+    try {
+      const ambiguous = await invoke(["--skill-arguments", String.raw`"project\" next"`]);
+      const result = await invoke(["--skill-arguments", `'${target}'`]);
+
+      expect(ambiguous.code).toBe(1);
+      expect(ambiguous.errors).toMatch(/malformed|unterminated|usage/i);
+      expect(result.code).toBe(0);
+      expect(result.options.targetPath).toBe(resolve("fixture repository", target));
+      await expect(access(sentinel)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
   });
 
   it.each(["'unterminated", '"unterminated'])("rejects malformed Skill payload %j", async (payload) => {

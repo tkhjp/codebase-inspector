@@ -22,16 +22,17 @@ export async function nearestExistingPath(path, fsOps = fs) {
   }
 }
 
-export async function resolveOutputBoundary({ targetRoot, outputPath, gitDir, fsOps = fs }) {
+export async function resolveOutputBoundary({ targetRoot, outputPath, gitDir, gitCommonDir = gitDir, fsOps = fs }) {
   const lexicalRoot = resolve(targetRoot);
   const lexicalOutput = resolve(outputPath);
   if (!isPathWithin(lexicalRoot, lexicalOutput, { allowRoot: false })) {
     throw new Error("Output path must stay inside target root and must not equal it");
   }
 
-  const [canonicalRoot, canonicalGitDir, existing] = await Promise.all([
+  const [canonicalRoot, canonicalGitDir, canonicalGitCommonDir, existing] = await Promise.all([
     fsOps.realpath(lexicalRoot),
     fsOps.realpath(resolve(gitDir)),
+    fsOps.realpath(resolve(gitCommonDir)),
     nearestExistingPath(lexicalOutput, fsOps)
   ]);
   const canonicalOutput = resolve(existing.realPath, relative(existing.path, lexicalOutput));
@@ -41,6 +42,9 @@ export async function resolveOutputBoundary({ targetRoot, outputPath, gitDir, fs
   if (isPathWithin(canonicalGitDir, canonicalOutput)) {
     throw new Error("Output path must not be inside the Git directory");
   }
+  if (isPathWithin(canonicalGitCommonDir, canonicalOutput)) {
+    throw new Error("Output path must not be inside the Git directory");
+  }
 
-  return { targetRoot: canonicalRoot, outputPath: canonicalOutput, gitDir: canonicalGitDir };
+  return { targetRoot: canonicalRoot, outputPath: canonicalOutput, gitDir: canonicalGitDir, gitCommonDir: canonicalGitCommonDir };
 }

@@ -1,5 +1,6 @@
 import { execFile as execFileCallback, fork, spawn } from "node:child_process";
-import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
@@ -145,6 +146,7 @@ test("preflight resolves Git metadata and rejects output outside the target root
     targetRoot: canonicalRoot,
     outputPath: join(canonicalRoot, "generated"),
     gitDir: join(canonicalRoot, ".git"),
+    gitCommonDir: join(canonicalRoot, ".git"),
     options: { tracked: false, output: "generated", keepIntermediate: false }
   });
   expect(config.gitCommitHash).toMatch(/^[0-9a-f]{40}$/);
@@ -183,3 +185,30 @@ test("two CLI processes contend deterministically and a third succeeds after rel
   expect(third.stdout).toMatch(/Codebase Inspector: complete/);
   expect(await stat(join(root, ".git/codebase-inspector.lock")).catch((error) => error.code)).toBe("ENOENT");
 }, 15_000);
+
+test("linked worktrees serialize through their canonical common Git directory", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  const linkedParent = await mkdtemp(join(tmpdir(), "codebase-inspector-linked-"));
+  const linked = join(linkedParent, "worktree");
+  await execFile("git", ["-C", root, "worktree", "add", "--detach", linked, "HEAD"], { encoding: "utf8" });
+
+  const mainConfig = await preflight({ targetPath: root, tracked: false, output: ".code-understanding", keepIntermediate: false }, skillDir);
+  const linkedConfig = await preflight({ targetPath: linked, tracked: false, output: ".code-understanding", keepIntermediate: false }, skillDir);
+  expect(mainConfig.gitDir).not.toBe(linkedConfig.gitDir);
+  expect(mainConfig.gitCommonDir).toBe(linkedConfig.gitCommonDir);
+
+  const first = fork(processRunner, [root], { silent: true });
+  const firstExit = waitForExit(first);
+  await waitForLock(first);
+
+  const second = await runCliResult(linked);
+  expect(second.code).not.toBe(0);
+  expect(second.stderr).toContain("analysis already running");
+
+  first.send({ type: "release" });
+  expect(await firstExit).toBe(0);
+  const third = await runCliResult(linked);
+  expect(third.code).toBe(0);
+  expect(await stat(join(mainConfig.gitCommonDir, "codebase-inspector-common.lock")).catch((error) => error.code)).toBe("ENOENT");
+  expect(await stat(join(linkedConfig.gitDir, "codebase-inspector.lock")).catch((error) => error.code)).toBe("ENOENT");
+}, 20_000);

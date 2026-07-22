@@ -116,3 +116,29 @@ test("sorts relationships deterministically regardless of raw analysis order", (
 
   expect(resolveRelationships(indexDraft, [b, a])).toEqual(resolveRelationships(indexDraft, [a, b]));
 });
+
+test("classifies receiver and member calls as dynamic before exact-name lookup", () => {
+  const indexDraft = draft({
+    files: [file("src/a.ts")],
+    functions: [
+      func("caller", "caller", "src/a.ts"),
+      func("dot", "service.run", "src/a.ts"),
+      func("scope", "A::run", "src/a.ts"),
+      func("arrow", "ptr->run", "src/a.ts")
+    ]
+  });
+  const analyses = [raw("src/a.ts", { calls: [
+    { callerName: "caller", callerOwnerName: null, calleeText: "service.run", lineNumber: 1 },
+    { callerName: "caller", callerOwnerName: null, calleeText: "A::run", lineNumber: 2 },
+    { callerName: "caller", callerOwnerName: null, calleeText: "ptr->run", lineNumber: 3 }
+  ] })];
+
+  const result = resolveRelationships(indexDraft, analyses);
+
+  expect(result.calls).toEqual([]);
+  expect(result.unresolvedCalls).toEqual([
+    { callerId: "caller", calleeText: "service.run", filePath: "src/a.ts", lineNumber: 1, reason: "dynamic-call" },
+    { callerId: "caller", calleeText: "A::run", filePath: "src/a.ts", lineNumber: 2, reason: "dynamic-call" },
+    { callerId: "caller", calleeText: "ptr->run", filePath: "src/a.ts", lineNumber: 3, reason: "dynamic-call" }
+  ]);
+});

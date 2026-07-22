@@ -49,6 +49,10 @@ function unresolvedReason(calleeText, callees) {
   return "callee-not-found";
 }
 
+function isDynamicCall(calleeText) {
+  return calleeText.includes(".") || calleeText.includes("::") || calleeText.includes("->");
+}
+
 export function resolveRelationships(indexDraft, rawAnalyses) {
   const filesByPath = new Map(indexDraft.files.map((file) => [file.path, file]));
   const typeById = new Map(indexDraft.types.map((type) => [type.id, type]));
@@ -111,6 +115,18 @@ export function resolveRelationships(indexDraft, rawAnalyses) {
           filePath: candidate.filePath,
           lineNumber: candidate.lineNumber,
           reason: "caller-not-found"
+        });
+        relationshipCounts.unresolvedCalls += 1;
+        continue;
+      }
+
+      if (isDynamicCall(candidate.calleeText)) {
+        unresolvedCalls.push({
+          callerId: caller.id,
+          calleeText: candidate.calleeText,
+          filePath: candidate.filePath,
+          lineNumber: candidate.lineNumber,
+          reason: "dynamic-call"
         });
         relationshipCounts.unresolvedCalls += 1;
         continue;

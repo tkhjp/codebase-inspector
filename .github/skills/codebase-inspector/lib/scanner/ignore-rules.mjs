@@ -1,5 +1,6 @@
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import ignore from "ignore";
+import { isPathWithin } from "../runtime/path-boundary.mjs";
 
 const BINARY_OR_MEDIA_EXTENSIONS = new Set([
   ".7z", ".a", ".avi", ".bin", ".bmp", ".class", ".dll", ".dmg", ".doc", ".docx", ".eot", ".exe", ".gif", ".gz", ".ico", ".jar", ".jpeg", ".jpg", ".mov", ".mp3", ".mp4", ".o", ".otf", ".pdf", ".png", ".so", ".tar", ".ttf", ".wasm", ".webm", ".webp", ".woff", ".woff2", ".xls", ".xlsx", ".zip"
@@ -18,9 +19,10 @@ const BUILTIN_PATTERNS = [
 
 export function normalizeRelativePath(path) {
   const normalized = path;
-  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) return null;
+  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:[\\/]/.test(normalized)) return null;
   const parts = normalized.split("/");
-  if (parts.some((part) => !part || part === "." || part === "..")) return null;
+  const windowsParts = normalized.split("\\");
+  if ([parts, windowsParts].some((segments) => segments.some((part) => !part || part === "." || part === ".."))) return null;
   return parts.join("/");
 }
 
@@ -28,11 +30,6 @@ function outputPathWithinRoot(root, output) {
   const outputPath = resolve(root, output);
   const normalized = relative(root, outputPath).split(sep).join("/");
   return normalizeRelativePath(normalized);
-}
-
-function isWithinRoot(root, path) {
-  const difference = relative(root, path);
-  return difference === "" || (!difference.startsWith("..") && !isAbsolute(difference));
 }
 
 export function isBinaryOrMediaPath(path) {
@@ -48,7 +45,7 @@ export async function createIgnoreMatcher(root, output, fsOps, warnings = []) {
   const ignoreFile = resolve(root, ".codeinspectorignore");
   try {
     const resolvedIgnoreFile = await fsOps.realpath(ignoreFile);
-    if (!isWithinRoot(root, resolvedIgnoreFile)) {
+    if (!isPathWithin(root, resolvedIgnoreFile)) {
       warnings.push("Skipped .codeinspectorignore: symlink escapes repository boundary");
       return (path) => isBinaryOrMediaPath(path) || matcher.ignores(path);
     }

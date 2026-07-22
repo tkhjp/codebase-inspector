@@ -2,6 +2,8 @@ import { expect, it } from "vitest";
 import { fileURLToPath, URL } from "node:url";
 import { createParserRegistry } from "../../lib/parsers/registry.mjs";
 import { createTreeSitterRuntime } from "../../lib/parsers/tree-sitter-runtime.mjs";
+import { buildSymbolIndex } from "../../lib/normalize/symbol-index.mjs";
+import { buildAnalysisReport } from "../../lib/reports/build-analysis-report.mjs";
 
 const skillDir = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -92,5 +94,59 @@ it("loads the vendored Dart grammar without a sibling checkout", async () => {
     });
   } finally {
     await runtime.close();
+  }
+});
+
+it("retains conservative facts and reports malformed TypeScript and Python as partial", async () => {
+  const registry = await createParserRegistry(skillDir);
+  const files = [
+    {
+      path: "broken.ts",
+      language: "typescript",
+      category: "source",
+      lineCount: 2,
+      bytes: 45,
+      content: "export function valid() {}\nfunction broken(\n"
+    },
+    {
+      path: "broken.py",
+      language: "python",
+      category: "source",
+      lineCount: 4,
+      bytes: 48,
+      content: "def valid():\n    return 1\n\ndef broken(:\n"
+    }
+  ];
+  try {
+    const analyses = await Promise.all(files.map((file) => registry.analyzeFile(file)));
+    expect(analyses.map((analysis) => analysis.warnings)).toEqual([
+      ["Tree-sitter syntax errors in broken.ts"],
+      ["Tree-sitter syntax errors in broken.py"]
+    ]);
+    expect(analyses[0].functions.map((entry) => entry.name)).toContain("valid");
+    expect(analyses[1].functions.map((entry) => entry.name)).toContain("valid");
+
+    const { symbolIndex, relationshipCounts } = buildSymbolIndex({
+      project: { name: "fixture", root: null, gitCommitHash: "abc123", workingTreeDirty: false, languages: ["python", "typescript"] },
+      scan: { files, unsupportedFiles: [], warnings: [], git: {} },
+      analyses,
+      skillVersion: "0.1.0"
+    });
+    const report = buildAnalysisReport({
+      symbolIndex,
+      scan: { files, unsupportedFiles: [], warnings: [] },
+      analyses,
+      relationshipCounts,
+      options: { tracked: false, output: ".code-understanding", keepIntermediate: false }
+    });
+
+    expect(symbolIndex.files.map((file) => file.parseStatus)).toEqual(["warning", "warning"]);
+    expect(report.status).toBe("partial");
+    expect(report.parserFailures).toEqual([
+      { filePath: "broken.py", warnings: ["Tree-sitter syntax errors in broken.py"] },
+      { filePath: "broken.ts", warnings: ["Tree-sitter syntax errors in broken.ts"] }
+    ]);
+  } finally {
+    await registry.close();
   }
 });

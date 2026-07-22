@@ -1,8 +1,8 @@
 import * as fs from "node:fs/promises";
 import { join } from "node:path";
 
-export async function withAnalysisLock(gitDir, action, { fsOps = fs } = {}) {
-  const lockPath = join(gitDir, "codebase-inspector.lock");
+export async function withAnalysisLock(gitDir, action, { fsOps = fs, lockName = "codebase-inspector.lock" } = {}) {
+  const lockPath = join(gitDir, lockName);
   let handle;
   try {
     handle = await fsOps.open(lockPath, "wx");
