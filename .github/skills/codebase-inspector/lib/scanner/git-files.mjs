@@ -1,14 +1,6 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { runGit } from "../runtime/git-command.mjs";
 import { normalizeRelativePath } from "./ignore-rules.mjs";
-
-const execFile = promisify(execFileCallback);
-
-async function git(root, args) {
-  const { stdout } = await execFile("git", ["-C", root, ...args], { encoding: "utf8" });
-  return stdout;
-}
 
 function toRelativePath(root, path) {
   if (typeof path !== "string" || !path) return null;
@@ -39,12 +31,12 @@ export function isWorkingTreeDirty(statusOutput, ignoredPaths) {
 export async function getGitMetadata(targetRoot, { ignoredPaths = [] } = {}) {
   const commandRoot = resolve(targetRoot);
   const [rootOutput, gitDirOutput, trackedOutput, commitHashOutput, commitTimestampOutput, statusOutput] = await Promise.all([
-    git(commandRoot, ["rev-parse", "--show-toplevel"]),
-    git(commandRoot, ["rev-parse", "--absolute-git-dir"]),
-    git(commandRoot, ["ls-files", "-z"]),
-    git(commandRoot, ["rev-parse", "HEAD"]),
-    git(commandRoot, ["show", "-s", "--format=%cI", "HEAD"]),
-    git(commandRoot, ["status", "--porcelain=v1", "-z"])
+    runGit(commandRoot, ["rev-parse", "--show-toplevel"]),
+    runGit(commandRoot, ["rev-parse", "--absolute-git-dir"]),
+    runGit(commandRoot, ["ls-files", "-z"]),
+    runGit(commandRoot, ["rev-parse", "HEAD"]),
+    runGit(commandRoot, ["show", "-s", "--format=%cI", "HEAD"]),
+    runGit(commandRoot, ["status", "--porcelain=v1", "-z"])
   ]);
   const root = resolve(rootOutput.trim());
   const normalizedIgnoredPaths = ignoredPaths.map((path) => toRelativePath(root, path)).filter(Boolean);

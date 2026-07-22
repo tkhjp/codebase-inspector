@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { access, chmod, readFile, realpath, writeFile } from "node:fs/promises";
+import { access, chmod, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -33,14 +33,17 @@ test("analysis proves offline and no-exec guards while leaving every absolute se
     makefile: join(root, "makefile.sentinel"),
     source: join(root, "source.sentinel"),
     processProbe: join(root, "process-probe.sentinel"),
+    fsmonitor: join(root, "fsmonitor.sentinel"),
     proof: join(root, ".git/offline-guard-proof.json")
   };
   const writerPath = join(root, "tools/write-sentinel.mjs");
   const probePath = join(root, "tools/target-probe.mjs");
+  const fsmonitorPath = join(root, "tools/fsmonitor-hook.cjs");
 
   await writeFile(writerPath, "import { writeFileSync } from 'node:fs';\nwriteFileSync(process.argv[2], 'executed');\n");
   await writeFile(probePath, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(paths.processProbe)}, 'executed');\n`);
   await chmod(probePath, 0o755);
+  await writeFile(fsmonitorPath, `const { writeFileSync } = require("node:fs");\nwriteFileSync(${JSON.stringify(paths.fsmonitor)}, "executed");\nprocess.stdout.write("token\\0");\n`);
   await writeFile(join(root, "package.json"), `${JSON.stringify({
     scripts: {
       build: quotedCommand(process.execPath, writerPath, paths.packageScript),
@@ -51,6 +54,11 @@ test("analysis proves offline and no-exec guards while leaving every absolute se
   await writeFile(join(root, "src/dangerous.js"), `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(paths.source)}, "executed");\nexport const value = 1;\n`);
   await execFile("git", ["-C", root, "add", "."]);
   await execFile("git", ["-C", root, "commit", "-qm", "absolute no-exec sentinels"]);
+  await execFile("git", ["-C", root, "config", "core.fsmonitor", quotedCommand(process.execPath, fsmonitorPath)]);
+
+  await execFile("git", ["-C", root, "status", "--porcelain=v1", "-z"]);
+  expect(await readFile(paths.fsmonitor, "utf8")).toBe("executed");
+  await rm(paths.fsmonitor);
 
   const guardConfig = JSON.stringify({
     root: await realpath(root),
@@ -81,6 +89,7 @@ test("analysis proves offline and no-exec guards while leaving every absolute se
     "child_process.fork",
     "child_process.spawn",
     "child_process.spawnSync",
+    "child_process.unhardenedGit",
     "dgram.Socket.prototype.connect",
     "dgram.Socket.prototype.send",
     "dgram.createSocket",

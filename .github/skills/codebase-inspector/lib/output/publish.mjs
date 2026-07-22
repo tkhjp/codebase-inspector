@@ -1,14 +1,12 @@
-import { execFile as execFileCallback } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
-import { promisify } from "node:util";
+import { runGit } from "../runtime/git-command.mjs";
 import { resolveOutputBoundary } from "../runtime/path-boundary.mjs";
 import { parseAnalysisReport } from "../schema/analysis-report.mjs";
 import { parseCodeGraph } from "../schema/code-graph.mjs";
 import { parseSymbolIndex } from "../schema/symbol-index.mjs";
 
-const execFile = promisify(execFileCallback);
 const artifactNames = Object.freeze([
   "analysis-report.json",
   "classes.md",
@@ -92,13 +90,13 @@ function removeOwnedBlocks(bytes) {
 }
 
 async function gitPublicationPaths(targetRoot) {
-  const [gitDirResult, excludeResult] = await Promise.all([
-    execFile("git", ["-C", targetRoot, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }),
-    execFile("git", ["-C", targetRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" })
+  const [gitDirOutput, excludeOutput] = await Promise.all([
+    runGit(targetRoot, ["rev-parse", "--absolute-git-dir"]),
+    runGit(targetRoot, ["rev-parse", "--git-path", "info/exclude"])
   ]);
-  const excludePath = excludeResult.stdout.trim();
+  const excludePath = excludeOutput.trim();
   return {
-    gitDir: gitDirResult.stdout.trim(),
+    gitDir: gitDirOutput.trim(),
     excludePath: isAbsolute(excludePath) ? excludePath : join(targetRoot, excludePath)
   };
 }

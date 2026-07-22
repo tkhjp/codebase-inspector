@@ -46,6 +46,7 @@ const gitOperations = new Set([
   ["status", "--porcelain=v1", "-z"],
   ["rev-parse", "--git-path", "info/exclude"]
 ].map((args) => JSON.stringify(args)));
+const hardenedGitPrefix = ["-c", "core.fsmonitor=false", "-C"];
 const npmOperations = new Set([
   ["ls", "--omit=dev", "--silent"],
   ["ci", "--omit=dev"]
@@ -53,9 +54,13 @@ const npmOperations = new Set([
 
 function allowed(command, args = [], options = {}) {
   if (command === "git"
-    && args[0] === "-C"
-    && path.resolve(args[1]) === path.resolve(config.root)
-    && gitOperations.has(JSON.stringify(args.slice(2)))) return true;
+    && args.slice(0, 3).every((value, index) => value === hardenedGitPrefix[index])
+    && path.resolve(args[3]) === path.resolve(config.root)
+    && gitOperations.has(JSON.stringify(args.slice(4)))
+    && options.env?.GIT_OPTIONAL_LOCKS === "0"
+    && options.env?.GIT_PAGER === "cat"
+    && options.env?.GIT_TERMINAL_PROMPT === "0"
+    && options.env?.LC_ALL === "C") return true;
   const executable = path.basename(String(command)).toLowerCase();
   return (executable === "npm" || executable === "npm.cmd")
     && path.resolve(options.cwd ?? "") === path.resolve(config.skillDir)
@@ -124,6 +129,7 @@ if (isPrimary) {
   prove("child_process.fork", () => childProcess.fork(config.processProbe));
   prove("child_process.spawn", () => childProcess.spawn(process.execPath, [config.processProbe]));
   prove("child_process.spawnSync", () => childProcess.spawnSync(process.execPath, [config.processProbe]));
+  prove("child_process.unhardenedGit", () => childProcess.execFile("git", ["-C", config.root, "status", "--porcelain=v1", "-z"]));
   prove("net.connect", () => net.connect(1));
   prove("net.createConnection", () => net.createConnection(1));
   prove("net.Socket.prototype.connect", () => net.Socket.prototype.connect.call({}, 1));

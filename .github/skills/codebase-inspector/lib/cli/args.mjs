@@ -12,15 +12,23 @@ function tokenizeSkillArguments(payload) {
   let token = "";
   let tokenStarted = false;
   let quote = null;
-  let escaping = false;
 
-  for (const character of payload) {
-    if (escaping) {
-      token += character;
+  for (let index = 0; index < payload.length; index += 1) {
+    const character = payload[index];
+    if (quote === "'") {
+      if (character === quote) quote = null;
+      else token += character;
       tokenStarted = true;
-      escaping = false;
     } else if (character === "\\") {
-      escaping = true;
+      const next = payload[index + 1];
+      const escapesDelimiter = next !== undefined && /\s/.test(next);
+      const escapesQuote = next === '"' || (!quote && next === "'");
+      if (next === "\\" || escapesDelimiter || escapesQuote) {
+        token += next;
+        index += 1;
+      } else {
+        token += character;
+      }
       tokenStarted = true;
     } else if (quote) {
       if (character === quote) quote = null;
@@ -41,7 +49,6 @@ function tokenizeSkillArguments(payload) {
     }
   }
 
-  if (escaping) malformed("trailing escape");
   if (quote) malformed("unterminated quote");
   if (tokenStarted) tokens.push(token);
   return tokens;

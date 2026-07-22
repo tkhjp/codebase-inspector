@@ -59,7 +59,11 @@ describe("parseArgs", () => {
     ["single quoted", "'project path'", "project path"],
     ["double quoted", '"project path"', "project path"],
     ["escaped space", "project\\ path", "project path"],
-    ["escaped quote", '"project \\"quoted\\""', 'project "quoted"']
+    ["escaped quote", '"project \\"quoted\\""', 'project "quoted"'],
+    ["unquoted Windows", String.raw`C:\work\repo`, String.raw`C:\work\repo`],
+    ["double quoted Windows", String.raw`"C:\Program Files\repo"`, String.raw`C:\Program Files\repo`],
+    ["single quoted Windows", String.raw`'C:\Program Files\repo'`, String.raw`C:\Program Files\repo`],
+    ["Windows drive root", "C:\\", "C:\\"]
   ])("tokenizes a %s Skill project path without execution", async (_label, payload, expectedPath) => {
     const cwd = resolve("fixture repository");
     const result = await invoke(["--skill-arguments", payload], cwd);
@@ -76,7 +80,23 @@ describe("parseArgs", () => {
     expect(result.options.targetPath).toBe(cwd);
   });
 
-  it.each(["'unterminated", '"unterminated', "trailing\\"])("rejects malformed Skill payload %j", async (payload) => {
+  it("preserves Windows output paths and supported escapes", async () => {
+    const cwd = resolve("fixture repository");
+    const result = await invoke([
+      "--skill-arguments",
+      String.raw`C:\work\repo --output "C:\Program Files\reports"`
+    ], cwd);
+
+    expect(result.code).toBe(0);
+    expect(result.options).toEqual({
+      targetPath: resolve(cwd, String.raw`C:\work\repo`),
+      tracked: false,
+      output: String.raw`C:\Program Files\reports`,
+      keepIntermediate: false
+    });
+  });
+
+  it.each(["'unterminated", '"unterminated'])("rejects malformed Skill payload %j", async (payload) => {
     const result = await invoke(["--skill-arguments", payload]);
 
     expect(result.code).toBe(1);
