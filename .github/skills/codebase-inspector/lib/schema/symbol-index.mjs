@@ -117,11 +117,14 @@ export const SymbolIndexSchema = z.object({
   coverage: CoverageSchema
 }).strict().superRefine((index, context) => {
   const collections = [["files", "File", index.files], ["types", "Type", index.types], ["methods", "Method", index.methods], ["functions", "Function", index.functions]];
+  const globalIds = new Set();
   collections.forEach(([collection, label, records]) => {
     const seenIds = new Set();
     records.forEach((record, recordIndex) => {
       if (seenIds.has(record.id)) addDuplicateId(context, collection, label, recordIndex, record.id);
+      if (globalIds.has(record.id)) addInvariantIssue(context, [collection, recordIndex, "id"], `Duplicate global ID: ${record.id}`);
       seenIds.add(record.id);
+      globalIds.add(record.id);
     });
   });
 

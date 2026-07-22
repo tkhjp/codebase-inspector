@@ -98,6 +98,24 @@ it.each([
   expect(() => parseSymbolIndex(invalid)).toThrow(new RegExp(`Duplicate ${recordName} ID`));
 });
 
+it("rejects a Method and Function ID collision", () => {
+  const invalid = validSymbolIndex();
+  const id = invalid.methods[0].id;
+  invalid.functions[0].id = id;
+  invalid.files[0].functionIds = [id];
+  invalid.calls[0].callerId = id;
+  expect(() => parseSymbolIndex(invalid)).toThrow(/Duplicate global ID/);
+});
+
+it("rejects a File and Type ID collision", () => {
+  const invalid = validSymbolIndex();
+  const id = invalid.files[0].id;
+  invalid.types[0].id = id;
+  invalid.files[0].typeIds = [id];
+  invalid.methods[0].ownerTypeId = id;
+  expect(() => parseSymbolIndex(invalid)).toThrow(/Duplicate global ID/);
+});
+
 it.each([
   ["types", "Type"],
   ["methods", "Method"],
