@@ -17,7 +17,7 @@ const BUILTIN_PATTERNS = [
 ];
 
 export function normalizeRelativePath(path) {
-  const normalized = path.replace(/\\/g, "/");
+  const normalized = path;
   if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) return null;
   const parts = normalized.split("/");
   if (parts.some((part) => !part || part === "." || part === "..")) return null;

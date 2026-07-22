@@ -34,7 +34,12 @@ export async function scanProject(runConfig, { fsOps = fs } = {}) {
 
   for (const trackedPath of git.trackedPaths) {
     const path = normalizeRelativePath(trackedPath);
-    if (!path || shouldIgnore(path)) continue;
+    if (!path) continue;
+    if (path.includes("\\")) {
+      warnings.push(warningFor(path, "literal backslash is not representable in generated paths"));
+      continue;
+    }
+    if (shouldIgnore(path)) continue;
 
     const workingPath = resolve(git.root, path);
     if (!isWithinRoot(git.root, workingPath)) {

@@ -17,11 +17,11 @@ function toRelativePath(root, path) {
 }
 
 function statusIsIgnored(path, ignoredPaths) {
-  const normalized = normalizeRelativePath(path);
+  const normalized = normalizeRelativePath(path.replace(/\/+$/, ""));
   return normalized !== null && ignoredPaths.some((ignoredPath) => normalized === ignoredPath || normalized.startsWith(`${ignoredPath}/`));
 }
 
-function parseDirtyStatus(statusOutput, ignoredPaths) {
+export function isWorkingTreeDirty(statusOutput, ignoredPaths) {
   const entries = statusOutput.split("\0");
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
@@ -52,9 +52,9 @@ export async function getGitMetadata(targetRoot, { ignoredPaths = [] } = {}) {
   return {
     root,
     gitDir: resolve(gitDirOutput.trim()),
-    trackedPaths: trackedOutput.split("\0").filter(Boolean).map((path) => path.replace(/\\/g, "/")).sort(),
+    trackedPaths: trackedOutput.split("\0").filter(Boolean).sort(),
     commitHash: commitHashOutput.trim(),
     commitTimestamp: commitTimestampOutput.trim(),
-    dirty: parseDirtyStatus(statusOutput, normalizedIgnoredPaths)
+    dirty: isWorkingTreeDirty(statusOutput, normalizedIgnoredPaths)
   };
 }

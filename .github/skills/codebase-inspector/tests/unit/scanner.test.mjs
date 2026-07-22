@@ -1,9 +1,10 @@
-import { symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { createFixtureRepo } from "../helpers/fixture-repo.mjs";
 import { scanProject } from "../../lib/scanner/scan.mjs";
+import { isWorkingTreeDirty } from "../../lib/scanner/git-files.mjs";
 
 function runConfig(root, options = {}) {
   return { targetRoot: root, gitDir: join(root, ".git"), options };
@@ -73,6 +74,23 @@ it("excludes configured output from scanning and dirty-state calculation", async
 
   await writeFile(join(root, "src/app.ts"), "export const app = false;\n");
   expect((await scanProject(runConfig(root, { output: ".generated" }))).git.dirty).toBe(true);
+});
+
+it("does not mark a wholly untracked configured output directory dirty", async () => {
+  const root = await createFixtureRepo({ "src/app.ts": "export const app = true;\n" });
+  await mkdir(join(root, ".generated"));
+  await writeFile(join(root, ".generated/new.ts"), "export const generated = true;\n");
+
+  const result = await scanProject(runConfig(root, { output: ".generated" }));
+
+  expect(result.git.dirty).toBe(false);
+});
+
+it("evaluates both NUL porcelain rename and copy paths against ignored output", () => {
+  const ignoredPaths = [".generated"];
+
+  expect(isWorkingTreeDirty("R  .generated/new.ts\0.generated/old.ts\0", ignoredPaths)).toBe(false);
+  expect(isWorkingTreeDirty("C  src/copied.ts\0.generated/old.ts\0", ignoredPaths)).toBe(true);
 });
 
 it("excludes tracked binary files and retains unsupported text metadata without content", async () => {
@@ -173,4 +191,16 @@ it("does not load ignore rules through an injected external symlink", async () =
 
   expect(result.files.map((file) => file.path)).toEqual(["src/a.ts"]);
   expect(result.warnings).toContainEqual(expect.stringMatching(/\.codeinspectorignore.*symlink/));
+});
+
+it.skipIf(process.platform === "win32")("warns and skips a tracked POSIX path containing a literal backslash", async () => {
+  const root = await createFixtureRepo({
+    "src/a.ts": "export const slash = true;\n",
+    "src\\a.ts": "export const backslash = true;\n"
+  });
+
+  const result = await scanProject(runConfig(root));
+
+  expect(result.files.map((file) => file.path)).toEqual(["src/a.ts"]);
+  expect(result.warnings).toContainEqual(expect.stringMatching(/src\\a\.ts.*backslash/));
 });
