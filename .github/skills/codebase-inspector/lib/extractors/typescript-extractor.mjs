@@ -101,6 +101,18 @@ function renderObjectTypeMember(node) {
   if (!name) return null;
   const optional = hasToken(node, "?") ? "?" : "";
 
+  if (node.type === "index_signature") {
+    const resultNode = node.childForFieldName("type");
+    const keyTypeNode = node.namedChildren.find((child) => (
+      child.id !== node.childForFieldName("name")?.id
+      && child.id !== resultNode?.id
+      && child.type !== "comment"
+    ));
+    const keyType = renderType(keyTypeNode);
+    const resultType = renderType(resultNode);
+    return keyType && resultType ? `[${name}: ${keyType}]: ${resultType}` : null;
+  }
+
   if (node.type === "property_signature") {
     const type = renderType(node.childForFieldName("type") ?? childOfType(node, "type_annotation"));
     return type ? `${name}${optional}: ${type}` : null;
@@ -113,6 +125,15 @@ function renderObjectTypeMember(node) {
   }
 
   return null;
+}
+
+function renderTupleElement(node) {
+  if (!["required_parameter", "optional_parameter"].includes(node.type)) return renderType(node);
+  const name = renderBindingPattern(node.childForFieldName("name") ?? node.childForFieldName("pattern"));
+  const type = renderType(node.childForFieldName("type") ?? childOfType(node, "type_annotation"));
+  if (!name || !type) return null;
+  const optional = node.type === "optional_parameter" ? "?" : "";
+  return `${name}${optional}: ${type}`;
 }
 
 function renderType(node) {
@@ -140,9 +161,15 @@ function renderType(node) {
     return returnType ? `(${parameters}) => ${returnType}` : null;
   }
 
+  if (node.type === "constructor_type") {
+    const parameters = renderTypedParameters(node.childForFieldName("parameters"));
+    const resultType = renderType(node.childForFieldName("type"));
+    return resultType ? `new (${parameters}) => ${resultType}` : null;
+  }
+
   if (node.type === "tuple_type") {
     const children = node.namedChildren.filter((child) => child.type !== "comment");
-    const values = children.map(renderType).filter(Boolean);
+    const values = children.map(renderTupleElement).filter(Boolean);
     return values.length === children.length ? `[${values.join(", ")}]` : null;
   }
 
@@ -153,6 +180,16 @@ function renderType(node) {
   }
 
   if (node.type === "literal_type") return renderStaticLiteral(node.namedChildren[0]);
+
+  if (node.type === "index_type_query") {
+    const value = renderType(node.namedChildren[0]);
+    return value ? `keyof ${value}` : null;
+  }
+
+  if (node.type === "readonly_type") {
+    const value = renderType(node.namedChildren[0]);
+    return value ? `readonly ${value}` : null;
+  }
 
   if (["union_type", "intersection_type"].includes(node.type)) {
     const values = node.namedChildren.map(renderType).filter(Boolean);

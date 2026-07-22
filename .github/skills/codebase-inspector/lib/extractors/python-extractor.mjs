@@ -16,13 +16,69 @@ function safeIdentifier(node) {
   return node?.type === "identifier" ? node.text : null;
 }
 
-function safeReference(node) {
+function parseSafeTypeString(value) {
+  let index = 0;
+  const skipSpace = () => {
+    while (/\s/.test(value[index] ?? "")) index += 1;
+  };
+  const parseIdentifier = () => {
+    skipSpace();
+    const match = /^[A-Za-z_]\w*/.exec(value.slice(index));
+    if (!match) return null;
+    index += match[0].length;
+    return match[0];
+  };
+  const parseType = () => {
+    let rendered = parseIdentifier();
+    if (!rendered) return null;
+
+    skipSpace();
+    while (value[index] === ".") {
+      index += 1;
+      const part = parseIdentifier();
+      if (!part) return null;
+      rendered += `.${part}`;
+      skipSpace();
+    }
+
+    if (value[index] !== "[") return rendered;
+    index += 1;
+    const argumentsList = [];
+    while (true) {
+      skipSpace();
+      let argument;
+      if (value.slice(index, index + 3) === "...") {
+        argument = "...";
+        index += 3;
+      } else {
+        argument = parseType();
+      }
+      if (!argument) return null;
+      argumentsList.push(argument);
+      skipSpace();
+      if (value[index] === "]") {
+        index += 1;
+        break;
+      }
+      if (value[index] !== ",") return null;
+      index += 1;
+    }
+    return `${rendered}[${argumentsList.join(", ")}]`;
+  };
+
+  const rendered = parseType();
+  skipSpace();
+  return rendered && index === value.length ? rendered : null;
+}
+
+function safeReference(node, { preserveStringLiteral = false } = {}) {
   if (!node) return null;
-  if (node.type === "type") return safeReference(node.namedChildren[0]);
+  if (node.type === "type") return safeReference(node.namedChildren[0], { preserveStringLiteral });
 
   const identifier = safeIdentifier(node);
   if (identifier) return identifier;
   if (node.type === "none") return "None";
+  if (node.type === "ellipsis") return "...";
 
   if (node.type === "dotted_name") {
     const names = node.namedChildren.map(safeIdentifier).filter(Boolean);
@@ -38,38 +94,43 @@ function safeReference(node) {
   if (node.type === "generic_type") {
     const name = safeReference(node.namedChildren[0]);
     const parameters = node.namedChildren.find((child) => child.type === "type_parameter");
-    const argumentsList = parameters?.namedChildren.map(safeReference).filter(Boolean) ?? [];
+    const literalArguments = name === "Literal" || name?.endsWith(".Literal");
+    const argumentsList = parameters?.namedChildren
+      .map((child) => safeReference(child, { preserveStringLiteral: literalArguments }))
+      .filter(Boolean) ?? [];
     return name && parameters && argumentsList.length === parameters.namedChildren.length
       ? `${name}[${argumentsList.join(", ")}]`
       : null;
   }
 
   if (node.type === "type_parameter") {
-    const values = node.namedChildren.map(safeReference).filter(Boolean);
+    const values = node.namedChildren.map((child) => safeReference(child, { preserveStringLiteral })).filter(Boolean);
     return values.length === node.namedChildren.length ? values.join(", ") : null;
   }
 
   if (node.type === "list") {
-    const values = node.namedChildren.map(safeReference).filter(Boolean);
+    const values = node.namedChildren.map((child) => safeReference(child, { preserveStringLiteral })).filter(Boolean);
     return values.length === node.namedChildren.length ? `[${values.join(", ")}]` : null;
   }
 
   if (node.type === "string") {
     const value = getStringValue(node);
-    return /^(?:[A-Za-z_]\w*)(?:\.[A-Za-z_]\w*)*$/.test(value) ? value : null;
+    return preserveStringLiteral ? JSON.stringify(value) : parseSafeTypeString(value);
   }
 
   if (node.type === "subscript") {
-    const value = safeReference(node.childForFieldName("value") ?? node.namedChildren[0]);
+    const value = safeReference(node.childForFieldName("value") ?? node.namedChildren[0], { preserveStringLiteral });
     const argumentsNode = node.childForFieldName("subscript") ?? node.namedChildren[1];
     if (!value || !argumentsNode) return null;
     const argumentNodes = argumentsNode.type === "tuple" ? argumentsNode.namedChildren : [argumentsNode];
-    const argumentsList = argumentNodes.map(safeReference).filter(Boolean);
+    const argumentsList = argumentNodes
+      .map((child) => safeReference(child, { preserveStringLiteral }))
+      .filter(Boolean);
     return argumentsList.length === argumentNodes.length ? `${value}[${argumentsList.join(", ")}]` : null;
   }
 
   if (node.type === "union_type") {
-    const values = node.namedChildren.map(safeReference).filter(Boolean);
+    const values = node.namedChildren.map((child) => safeReference(child, { preserveStringLiteral })).filter(Boolean);
     return values.length === node.namedChildren.length ? values.join(" | ") : null;
   }
 
@@ -228,6 +289,7 @@ function calleeText(node) {
 }
 
 function traversalChildren(node) {
+  if (node.type === "type") return [];
   if (!["default_parameter", "typed_default_parameter"].includes(node.type)) {
     return node.namedChildren;
   }

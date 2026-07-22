@@ -269,4 +269,55 @@ describe("Python rich symbol extraction", () => {
     expect(serialized).not.toContain("property-secret");
     expect(serialized).not.toContain("source-body-secret");
   });
+
+  it("renders context-aware Python literal ellipsis and generic forward-reference types", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/advanced_type_shapes.py",
+      language: "python",
+      content: [
+        "from typing import Annotated, Callable, Literal",
+        "class AdvancedShapes:",
+        "    state: Literal['ready']",
+        "    callback: Callable[..., str]",
+        "    values: tuple[int, ...]",
+        "    linked: 'list[Node]'",
+        "    mapped: 'dict[str, Node]'",
+        "    rejected: \"Node | reveal('annotation-secret')\"",
+        "    metadata: Annotated[str, metadataProbe('metadata-secret')]",
+        "    def transform(self, callback: Callable[..., str], linked: 'list[Node]', value: str = defaultProbe('default-secret')) -> 'dict[str, Node]':",
+        "        helper('python-type-body-secret')",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.types[0].properties).toEqual([
+      expect.objectContaining({ name: "state", type: "Literal[\"ready\"]" }),
+      expect.objectContaining({ name: "callback", type: "Callable[..., str]" }),
+      expect.objectContaining({ name: "values", type: "tuple[int, ...]" }),
+      expect.objectContaining({ name: "linked", type: "list[Node]" }),
+      expect.objectContaining({ name: "mapped", type: "dict[str, Node]" }),
+      expect.objectContaining({ name: "rejected", type: null }),
+      expect.objectContaining({ name: "metadata", type: null })
+    ]);
+    expect(result.methods).toContainEqual(expect.objectContaining({
+      name: "transform",
+      parameters: [
+        { name: "callback", type: "Callable[..., str]" },
+        { name: "linked", type: "list[Node]" },
+        { name: "value", type: "str" }
+      ],
+      returnType: "dict[str, Node]"
+    }));
+    const serialized = JSON.stringify(result);
+    for (const forbidden of [
+      "annotation-secret",
+      "metadata-secret",
+      "default-secret",
+      "python-type-body-secret",
+      "metadataProbe",
+      "defaultProbe"
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+  });
 });

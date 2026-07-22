@@ -445,6 +445,53 @@ describe("TypeScript rich symbol extraction", () => {
     expect(serialized).not.toContain("source-body-secret");
   });
 
+  it("renders advanced static TypeScript types in property parameter and return positions", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/advanced-type-shapes.ts",
+      language: "typescript",
+      content: [
+        "class AdvancedShapes {",
+        "  index: { [key: string]: number };",
+        "  tuple: [name: string, count?: number, ...rest: Namespace.Item[]];",
+        "  ctor: new (x: string) => Thing;",
+        "  keys: keyof Model;",
+        "  readonlyItems: readonly Namespace.Item[];",
+        "  uniqueKey: unique symbol;",
+        "}",
+        "function advanced(",
+        "  index: { [key: string]: number },",
+        "  tuple: [name: string, count?: number, ...rest: Namespace.Item[]],",
+        "  ctor: new (x: string) => Thing,",
+        "  keys: keyof Model,",
+        "  nested: Map<keyof Model, readonly [head: Namespace.Item, ...tail: string[]]>",
+        "): { create: new (x: string) => Thing; values: readonly [head: string, ...tail: number[]] } { helper('advanced-type-body-secret'); return value; }",
+        ""
+      ].join("\n")
+    });
+
+    const expected = {
+      index: "{ [key: string]: number }",
+      tuple: "[name: string, count?: number, ...rest: Namespace.Item[]]",
+      ctor: "new (x: string) => Thing",
+      keys: "keyof Model",
+      readonlyItems: "readonly Namespace.Item[]",
+      uniqueKey: "unique symbol"
+    };
+    expect(Object.fromEntries(result.types[0].properties.map(({ name, type }) => [name, type]))).toEqual(expected);
+    expect(result.functions).toContainEqual(expect.objectContaining({
+      name: "advanced",
+      parameters: [
+        { name: "index", type: expected.index },
+        { name: "tuple", type: expected.tuple },
+        { name: "ctor", type: expected.ctor },
+        { name: "keys", type: expected.keys },
+        { name: "nested", type: "Map<keyof Model, readonly [head: Namespace.Item, ...tail: string[]]>" }
+      ],
+      returnType: "{ create: new (x: string) => Thing; values: readonly [head: string, ...tail: number[]] }"
+    }));
+    expect(JSON.stringify(result)).not.toContain("advanced-type-body-secret");
+  });
+
   it("extracts TypeScript generator declarations and values with caller context", async () => {
     const result = await registry.analyzeFile({
       path: "src/generators.ts",
