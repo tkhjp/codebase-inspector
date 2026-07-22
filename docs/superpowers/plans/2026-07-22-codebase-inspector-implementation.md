@@ -1,5 +1,7 @@
 # Codebase Inspector Implementation Plan
 
+> Superseded by 2026-07-23-codebase-inspector-upstream-reuse-implementation.md.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a self-contained GitHub Copilot Project Skill that deterministically indexes repository files, types, methods, functions, imports, and calls without using an LLM in the analysis engine.

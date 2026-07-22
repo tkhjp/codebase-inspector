@@ -3,14 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:languages": "vitest run tests/languages",
     "test:integration": "vitest run tests/integration --no-file-parallelism",
-    "release:zip": "node scripts/package-release.mjs"
+    "release:zip": "node scripts/package-release.mjs",
+    "check:licenses": "node scripts/check-licenses.mjs"
   },
   "dependencies": {
     "@tree-sitter-grammars/tree-sitter-kotlin": "1.1.0",
@@ -32,10 +35,10 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
-    "adm-zip": "0.5.16",
+    "adm-zip": "0.6.0",
     "esbuild": "0.28.1",
     "eslint": "9.39.2",
     "license-checker-rseidelsohn": "4.4.2",
-    "vitest": "3.2.4"
+    "vitest": "3.2.7"
   }
 }

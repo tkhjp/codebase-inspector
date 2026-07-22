@@ -1,0 +1,90 @@
+# Codebase Inspector Notices
+
+## Repository License
+
+The Codebase Inspector repository and its adapted source are licensed under the MIT License in `LICENSE`.
+
+## Understand-Anything Extractor Snapshot
+
+Source repository: https://github.com/Egonex-AI/Understand-Anything
+
+Pinned commit: `54754a6f97051d1d76c8758353d8ea41afe502a6`
+
+The following vendored files were mechanically converted from the pinned source. Source and generated SHA-256 values are recorded in `.github/skills/codebase-inspector/vendor/understand-anything/manifest.json`.
+
+| Source path | Generated destination |
+|---|---|
+| `understand-anything-plugin/packages/core/src/plugins/extractors/base-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/base-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/cpp-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/cpp-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/csharp-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/csharp-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/dart-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/dart-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/go-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/go-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/java-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/java-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/kotlin-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/kotlin-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/php-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/php-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/python-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/python-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/ruby-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/ruby-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/rust-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/rust-extractor.mjs` |
+| `understand-anything-plugin/packages/core/src/plugins/extractors/typescript-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/typescript-extractor.mjs` |
+
+No local patches are applied in version `0.1.0`.
+
+The pinned Understand-Anything source is MIT licensed:
+
+```text
+MIT License
+
+Copyright (c) 2026 Yuxiang Lin
+Copyright (c) 2026 Infinite Universe, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## tree-sitter-dart WASM
+
+The Dart grammar source is `tree-sitter-dart@1.0.0` from publisher `amaanq`, using its unchanged `grammar.js`. The shipped `tree-sitter-dart.wasm` was rebuilt with `tree-sitter-cli@0.26.x` and `wasi-sdk-29-arm64-macos`; the detailed repeatable procedure is in `.github/skills/codebase-inspector/vendor/tree-sitter-dart/BUILD.md`.
+
+The package metadata observed for the Dart package reports `ISC`, while the shipped `LICENSE` and `BUILD.md` report MIT. This discrepancy is retained here without silently resolving it. The shipped MIT license text is:
+
+```text
+Copyright (c) 2020-2022 UserNobody14 and others
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## npm Production Dependencies
+
+The machine-readable production-only inventory is `.github/skills/codebase-inspector/THIRD_PARTY_LICENSES.json`. It is derived from the locked production dependency graph; development-only dependencies are intentionally excluded.

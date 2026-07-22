@@ -3,3 +3,4 @@ coverage/
 tests/tmp/
 *.log
 .codebase-inspector-runtime.json
+codebase-inspector-*.zip

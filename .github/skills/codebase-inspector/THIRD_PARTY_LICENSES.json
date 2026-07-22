@@ -1,0 +1,110 @@
+{
+  "formatVersion": 1,
+  "packages": [
+    {
+      "license": "MIT",
+      "name": "@tree-sitter-grammars/tree-sitter-kotlin",
+      "version": "1.1.0"
+    },
+    {
+      "license": "MIT",
+      "name": "ignore",
+      "version": "7.0.5"
+    },
+    {
+      "license": "MIT",
+      "name": "jsonc-parser",
+      "version": "3.3.1"
+    },
+    {
+      "license": "MIT",
+      "name": "node-addon-api",
+      "version": "8.9.0"
+    },
+    {
+      "license": "MIT",
+      "name": "node-gyp-build",
+      "version": "4.8.4"
+    },
+    {
+      "license": "Apache-2.0",
+      "name": "npm-check-updates",
+      "version": "17.1.18"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-c",
+      "version": "0.23.6"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-c-sharp",
+      "version": "0.23.1"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-cpp",
+      "version": "0.23.4"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-go",
+      "version": "0.25.0"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-java",
+      "version": "0.23.5"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-javascript",
+      "version": "0.25.0"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-php",
+      "version": "0.23.11"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-python",
+      "version": "0.25.0"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-ruby",
+      "version": "0.23.1"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-rust",
+      "version": "0.24.0"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-typescript",
+      "version": "0.23.2"
+    },
+    {
+      "license": "MIT",
+      "name": "tree-sitter-typescript/node_modules/tree-sitter-javascript",
+      "version": "0.23.1"
+    },
+    {
+      "license": "MIT",
+      "name": "web-tree-sitter",
+      "version": "0.26.6"
+    },
+    {
+      "license": "ISC",
+      "name": "yaml",
+      "version": "2.8.3"
+    },
+    {
+      "license": "MIT",
+      "name": "zod",
+      "version": "4.3.6"
+    }
+  ]
+}

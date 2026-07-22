@@ -1,15 +1,15 @@
 # tree-sitter-dart WASM (vendored)
 
 This directory ships a pre-built `tree-sitter-dart.wasm` because the upstream
-npm release does not.
+npm release does not ship a `web-tree-sitter@0.26`-compatible WASM.
 
 ## Why vendored
 
-The published `tree-sitter-dart@1.0.0` (2023-02-24) tarball does include a
-`tree-sitter-dart.wasm`, but it was built with a pre-`dylink.0` tree-sitter
-CLI. `web-tree-sitter@0.26.x` — the loader this project uses — expects the
-newer `dylink.0` custom-section name and refuses to load the older format
-(failure surfaces in `getDylinkMetadata`).
+The published `tree-sitter-dart@1.0.0` (2023-02-24) tarball includes a WASM
+file, but it was built with a pre-`dylink.0` tree-sitter CLI. It is therefore
+not compatible with `web-tree-sitter@0.26.x`, which expects the newer
+`dylink.0` custom-section name and rejects the older format in
+`getDylinkMetadata`.
 
 Rebuilding the same upstream grammar.js with a current
 `tree-sitter-cli@0.26.x` produces a `dylink.0` wasm that loads cleanly.

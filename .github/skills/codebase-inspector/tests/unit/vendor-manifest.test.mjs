@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { URL } from "node:url";
 import { describe, expect, test } from "vitest";
 
@@ -24,7 +25,9 @@ describe("vendored Understand-Anything snapshot", () => {
 
     for (const entry of [manifest.base, ...manifest.extractors]) {
       const generatedUrl = new URL(entry.generatedPath.slice(skillPrefix.length), skillRoot);
-      expect(await readFile(generatedUrl, "utf8")).toContain(entry.sourcePath);
+      const generated = await readFile(generatedUrl);
+      expect(generated.toString("utf8")).toContain(entry.sourcePath);
+      expect(createHash("sha256").update(generated).digest("hex")).toBe(entry.generatedSha256);
     }
   });
 });
