@@ -75,9 +75,19 @@ function renderTypeArguments(node) {
   return values.length === node.namedChildren.length ? `<${values.join(", ")}>` : null;
 }
 
+function renderTypeSignatureParameter(node) {
+  const name = renderBindingPattern(node);
+  const type = renderType(node.childForFieldName("type") ?? childOfType(node, "type_annotation"));
+  if (!name || !type) return null;
+  const optional = node.type === "optional_parameter" || hasToken(node, "?") ? "?" : "";
+  return `${name}${optional}: ${type}`;
+}
+
 function renderTypedParameters(node) {
-  const parameters = extractParameters(node);
-  return parameters.map(({ name, type }) => type ? `${name}: ${type}` : name).join(", ");
+  if (!node) return "";
+  const children = node.namedChildren.filter((child) => child.type !== "comment");
+  const parameters = children.map(renderTypeSignatureParameter).filter(Boolean);
+  return parameters.length === children.length ? parameters.join(", ") : null;
 }
 
 function renderStaticLiteral(node) {
@@ -121,7 +131,7 @@ function renderObjectTypeMember(node) {
   if (node.type === "method_signature") {
     const parameters = renderTypedParameters(node.childForFieldName("parameters"));
     const returnType = renderType(node.childForFieldName("return_type"));
-    return returnType ? `${name}${optional}(${parameters}): ${returnType}` : null;
+    return parameters !== null && returnType ? `${name}${optional}(${parameters}): ${returnType}` : null;
   }
 
   return null;
@@ -158,13 +168,13 @@ function renderType(node) {
   if (node.type === "function_type") {
     const parameters = renderTypedParameters(node.childForFieldName("parameters"));
     const returnType = renderType(node.childForFieldName("return_type"));
-    return returnType ? `(${parameters}) => ${returnType}` : null;
+    return parameters !== null && returnType ? `(${parameters}) => ${returnType}` : null;
   }
 
   if (node.type === "constructor_type") {
     const parameters = renderTypedParameters(node.childForFieldName("parameters"));
     const resultType = renderType(node.childForFieldName("type"));
-    return resultType ? `new (${parameters}) => ${resultType}` : null;
+    return parameters !== null && resultType ? `new (${parameters}) => ${resultType}` : null;
   }
 
   if (node.type === "tuple_type") {
@@ -189,6 +199,11 @@ function renderType(node) {
   if (node.type === "readonly_type") {
     const value = renderType(node.namedChildren[0]);
     return value ? `readonly ${value}` : null;
+  }
+
+  if (node.type === "type_query") {
+    const value = safeQualifiedName(node.namedChildren[0]);
+    return value ? `typeof ${value}` : null;
   }
 
   if (["union_type", "intersection_type"].includes(node.type)) {

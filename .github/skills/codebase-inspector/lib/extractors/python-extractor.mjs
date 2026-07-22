@@ -71,9 +71,36 @@ function parseSafeTypeString(value) {
   return rendered && index === value.length ? rendered : null;
 }
 
-function safeReference(node, { preserveStringLiteral = false } = {}) {
+function renderPythonNumber(node) {
+  if (!node || !["integer", "float"].includes(node.type)) return null;
+  const value = node.text;
+  if (node.type === "integer") return /^(?:0|[1-9]\d*(?:_\d+)*)$/.test(value) ? value : null;
+  const normalized = value.replaceAll("_", "");
+  return /^(?:(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)$/.test(normalized)
+    ? value
+    : null;
+}
+
+function renderPythonLiteral(node) {
   if (!node) return null;
-  if (node.type === "type") return safeReference(node.namedChildren[0], { preserveStringLiteral });
+  if (node.type === "string") return JSON.stringify(getStringValue(node));
+  if (node.type === "true") return "True";
+  if (node.type === "false") return "False";
+  if (node.type === "none") return "None";
+
+  const number = renderPythonNumber(node);
+  if (number) return number;
+  if (node.type !== "unary_operator") return null;
+
+  const sign = node.children.find((child) => ["+", "-"].includes(child.type))?.type;
+  const operand = renderPythonNumber(node.namedChildren[0]);
+  return sign && operand ? `${sign}${operand}` : null;
+}
+
+function safeReference(node, { literalContext = false } = {}) {
+  if (!node) return null;
+  if (node.type === "type") return safeReference(node.namedChildren[0], { literalContext });
+  if (literalContext) return renderPythonLiteral(node);
 
   const identifier = safeIdentifier(node);
   if (identifier) return identifier;
@@ -96,7 +123,7 @@ function safeReference(node, { preserveStringLiteral = false } = {}) {
     const parameters = node.namedChildren.find((child) => child.type === "type_parameter");
     const literalArguments = name === "Literal" || name?.endsWith(".Literal");
     const argumentsList = parameters?.namedChildren
-      .map((child) => safeReference(child, { preserveStringLiteral: literalArguments }))
+      .map((child) => safeReference(child, { literalContext: literalArguments }))
       .filter(Boolean) ?? [];
     return name && parameters && argumentsList.length === parameters.namedChildren.length
       ? `${name}[${argumentsList.join(", ")}]`
@@ -104,33 +131,33 @@ function safeReference(node, { preserveStringLiteral = false } = {}) {
   }
 
   if (node.type === "type_parameter") {
-    const values = node.namedChildren.map((child) => safeReference(child, { preserveStringLiteral })).filter(Boolean);
+    const values = node.namedChildren.map((child) => safeReference(child, { literalContext })).filter(Boolean);
     return values.length === node.namedChildren.length ? values.join(", ") : null;
   }
 
   if (node.type === "list") {
-    const values = node.namedChildren.map((child) => safeReference(child, { preserveStringLiteral })).filter(Boolean);
+    const values = node.namedChildren.map((child) => safeReference(child, { literalContext })).filter(Boolean);
     return values.length === node.namedChildren.length ? `[${values.join(", ")}]` : null;
   }
 
   if (node.type === "string") {
     const value = getStringValue(node);
-    return preserveStringLiteral ? JSON.stringify(value) : parseSafeTypeString(value);
+    return parseSafeTypeString(value);
   }
 
   if (node.type === "subscript") {
-    const value = safeReference(node.childForFieldName("value") ?? node.namedChildren[0], { preserveStringLiteral });
+    const value = safeReference(node.childForFieldName("value") ?? node.namedChildren[0], { literalContext });
     const argumentsNode = node.childForFieldName("subscript") ?? node.namedChildren[1];
     if (!value || !argumentsNode) return null;
     const argumentNodes = argumentsNode.type === "tuple" ? argumentsNode.namedChildren : [argumentsNode];
     const argumentsList = argumentNodes
-      .map((child) => safeReference(child, { preserveStringLiteral }))
+      .map((child) => safeReference(child, { literalContext }))
       .filter(Boolean);
     return argumentsList.length === argumentNodes.length ? `${value}[${argumentsList.join(", ")}]` : null;
   }
 
   if (node.type === "union_type") {
-    const values = node.namedChildren.map((child) => safeReference(child, { preserveStringLiteral })).filter(Boolean);
+    const values = node.namedChildren.map((child) => safeReference(child, { literalContext })).filter(Boolean);
     return values.length === node.namedChildren.length ? values.join(" | ") : null;
   }
 

@@ -492,6 +492,44 @@ describe("TypeScript rich symbol extraction", () => {
     expect(JSON.stringify(result)).not.toContain("advanced-type-body-secret");
   });
 
+  it("renders typeof queries and preserves optional callable signature parameters", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/type-queries.ts",
+      language: "typescript",
+      content: [
+        "class Queries {",
+        "  direct: typeof Namespace.value;",
+        "  nested: Promise<typeof Namespace.value>;",
+        "  callback: (value?: string, ...rest: number[]) => typeof Namespace.result;",
+        "  ctor: new (value?: string, ...rest: number[]) => typeof Namespace.Thing;",
+        "}",
+        "function query(",
+        "  value: typeof Namespace.value,",
+        "  callback: (value?: string) => void,",
+        "  ctor: new (value?: string) => typeof Namespace.Thing",
+        "): typeof Namespace.result { helper('type-query-body-secret'); return Namespace.result; }",
+        ""
+      ].join("\n")
+    });
+
+    expect(Object.fromEntries(result.types[0].properties.map(({ name, type }) => [name, type]))).toEqual({
+      direct: "typeof Namespace.value",
+      nested: "Promise<typeof Namespace.value>",
+      callback: "(value?: string, ...rest: number[]) => typeof Namespace.result",
+      ctor: "new (value?: string, ...rest: number[]) => typeof Namespace.Thing"
+    });
+    expect(result.functions).toContainEqual(expect.objectContaining({
+      name: "query",
+      parameters: [
+        { name: "value", type: "typeof Namespace.value" },
+        { name: "callback", type: "(value?: string) => void" },
+        { name: "ctor", type: "new (value?: string) => typeof Namespace.Thing" }
+      ],
+      returnType: "typeof Namespace.result"
+    }));
+    expect(JSON.stringify(result)).not.toContain("type-query-body-secret");
+  });
+
   it("extracts TypeScript generator declarations and values with caller context", async () => {
     const result = await registry.analyzeFile({
       path: "src/generators.ts",

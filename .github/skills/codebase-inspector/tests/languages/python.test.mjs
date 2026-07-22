@@ -320,4 +320,26 @@ describe("Python rich symbol extraction", () => {
       expect(serialized).not.toContain(forbidden);
     }
   });
+
+  it("renders validated mixed Python Literal values and rejects expression metadata", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/literal_values.py",
+      language: "python",
+      content: [
+        "from typing import Literal",
+        "class LiteralValues:",
+        "    mixed: Literal[1, -2, 3.5, True, False, None, 'ready']",
+        "    rejected: Literal[literalProbe('literal-secret')]",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.types[0].properties).toEqual([
+      expect.objectContaining({ name: "mixed", type: "Literal[1, -2, 3.5, True, False, None, \"ready\"]" }),
+      expect.objectContaining({ name: "rejected", type: null })
+    ]);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("literal-secret");
+    expect(serialized).not.toContain("literalProbe");
+  });
 });
