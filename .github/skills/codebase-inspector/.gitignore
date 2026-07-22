@@ -1,0 +1,5 @@
+node_modules/
+coverage/
+tests/tmp/
+*.log
+.codebase-inspector-runtime.json
