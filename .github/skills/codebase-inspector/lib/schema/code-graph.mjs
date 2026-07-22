@@ -37,6 +37,24 @@ export const CodeGraphSchema = z.object({
   edges: z.array(GraphEdgeSchema),
   layers: z.array(z.never()).max(0),
   tour: z.array(z.never()).max(0)
-}).strict();
+}).strict().superRefine((graph, context) => {
+  const nodeIds = new Set();
+
+  graph.nodes.forEach((node, nodeIndex) => {
+    if (nodeIds.has(node.id)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["nodes", nodeIndex, "id"], message: `Duplicate node ID: ${node.id}` });
+    }
+    nodeIds.add(node.id);
+  });
+
+  graph.edges.forEach((edge, edgeIndex) => {
+    if (!nodeIds.has(edge.source)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["edges", edgeIndex, "source"], message: `Unknown edge source: ${edge.source}` });
+    }
+    if (!nodeIds.has(edge.target)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["edges", edgeIndex, "target"], message: `Unknown edge target: ${edge.target}` });
+    }
+  });
+});
 
 export const parseCodeGraph = (value) => CodeGraphSchema.parse(value);

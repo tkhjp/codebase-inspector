@@ -92,6 +92,10 @@ function addDanglingReference(context, path, value) {
   context.addIssue({ code: z.ZodIssueCode.custom, path, message: `Dangling reference: ${value}` });
 }
 
+function addDuplicateId(context, collection, label, index, id) {
+  context.addIssue({ code: z.ZodIssueCode.custom, path: [collection, index, "id"], message: `Duplicate ${label} ID: ${id}` });
+}
+
 export const SymbolIndexSchema = z.object({
   schemaVersion: z.literal("1.0.0"),
   project: ProjectSchema,
@@ -105,10 +109,19 @@ export const SymbolIndexSchema = z.object({
   coverage: CoverageSchema
 }).strict().superRefine((index, context) => {
   const fileIds = new Set(index.files.map((file) => file.id));
+  const filePaths = new Set(index.files.map((file) => file.path));
   const typeIds = new Set(index.types.map((type) => type.id));
   const methodIds = new Set(index.methods.map((method) => method.id));
   const functionIds = new Set(index.functions.map((func) => func.id));
   const callableIds = new Set([...methodIds, ...functionIds]);
+
+  [["files", "File", index.files], ["types", "Type", index.types], ["methods", "Method", index.methods], ["functions", "Function", index.functions]].forEach(([collection, label, records]) => {
+    const seenIds = new Set();
+    records.forEach((record, recordIndex) => {
+      if (seenIds.has(record.id)) addDuplicateId(context, collection, label, recordIndex, record.id);
+      seenIds.add(record.id);
+    });
+  });
 
   index.files.forEach((file, fileIndex) => {
     file.typeIds.forEach((id, idIndex) => {
@@ -123,13 +136,25 @@ export const SymbolIndexSchema = z.object({
   });
 
   index.types.forEach((type, typeIndex) => {
+    if (!filePaths.has(type.filePath)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["types", typeIndex, "filePath"], message: `Type filePath must reference an existing File path: ${type.filePath}` });
+    }
     type.methodIds.forEach((id, idIndex) => {
       if (!methodIds.has(id)) addDanglingReference(context, ["types", typeIndex, "methodIds", idIndex], id);
     });
   });
 
   index.methods.forEach((method, methodIndex) => {
+    if (!filePaths.has(method.filePath)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["methods", methodIndex, "filePath"], message: `Method filePath must reference an existing File path: ${method.filePath}` });
+    }
     if (!typeIds.has(method.ownerTypeId)) addDanglingReference(context, ["methods", methodIndex, "ownerTypeId"], method.ownerTypeId);
+  });
+
+  index.functions.forEach((func, functionIndex) => {
+    if (!filePaths.has(func.filePath)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["functions", functionIndex, "filePath"], message: `Function filePath must reference an existing File path: ${func.filePath}` });
+    }
   });
 
   index.imports.forEach((record, importIndex) => {
