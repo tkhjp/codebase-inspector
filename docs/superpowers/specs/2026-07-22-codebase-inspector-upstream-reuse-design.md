@@ -1,7 +1,7 @@
 # Codebase Inspector Upstream-Reuse Design
 
 Date: 2026-07-22  
-Status: Proposed after scope simplification
+Status: Approved on 2026-07-23
 
 ## 1. Decision
 
