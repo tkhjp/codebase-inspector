@@ -12,6 +12,46 @@ function unwrapDecorated(node) {
   return findChild(node, "function_definition") ?? findChild(node, "class_definition") ?? node;
 }
 
+function safeIdentifier(node) {
+  return node?.type === "identifier" ? node.text : null;
+}
+
+function safeReference(node) {
+  if (!node) return null;
+  if (node.type === "type") return safeReference(node.namedChildren[0]);
+
+  const identifier = safeIdentifier(node);
+  if (identifier) return identifier;
+  if (node.type === "none") return "None";
+
+  if (node.type === "dotted_name") {
+    const names = node.namedChildren.map(safeIdentifier).filter(Boolean);
+    return names.length === node.namedChildren.length ? names.join(".") : null;
+  }
+
+  if (node.type === "attribute") {
+    const object = safeReference(node.childForFieldName("object"));
+    const attribute = safeIdentifier(node.childForFieldName("attribute"));
+    return object && attribute ? `${object}.${attribute}` : null;
+  }
+
+  if (node.type === "subscript") {
+    const value = safeReference(node.childForFieldName("value") ?? node.namedChildren[0]);
+    const argumentsNode = node.childForFieldName("subscript") ?? node.namedChildren[1];
+    if (!value || !argumentsNode) return null;
+    const argumentNodes = argumentsNode.type === "tuple" ? argumentsNode.namedChildren : [argumentsNode];
+    const argumentsList = argumentNodes.map(safeReference).filter(Boolean);
+    return argumentsList.length === argumentNodes.length ? `${value}[${argumentsList.join(", ")}]` : null;
+  }
+
+  if (node.type === "union_type") {
+    const values = node.namedChildren.map(safeReference).filter(Boolean);
+    return values.length === node.namedChildren.length ? values.join(" | ") : null;
+  }
+
+  return null;
+}
+
 function parameterName(node) {
   if (node.type === "identifier") return node.text;
   const splat = findChild(node, "list_splat_pattern") ?? findChild(node, "dictionary_splat_pattern");
@@ -23,65 +63,84 @@ function parameterName(node) {
   return identifier.text;
 }
 
-function extractParameters(paramsNode) {
+function extractParameters(paramsNode, receiverKind = null) {
   if (!paramsNode) return [];
   const parameters = [];
 
   for (const child of paramsNode.namedChildren) {
     const name = parameterName(child);
-    if (!name || name === "self" || name === "cls") continue;
+    if (!name) continue;
     const typeNode = child.childForFieldName("type") ?? findChild(child, "type");
-    parameters.push({ name, type: typeNode?.text ?? null });
+    parameters.push({ name, type: safeReference(typeNode) });
   }
 
+  if (["instance", "class"].includes(receiverKind) && parameters.length > 0) return parameters.slice(1);
   return parameters;
 }
 
-function extractCallable(node, ownerName = null) {
+function decoratorName(decorator) {
+  return safeIdentifier(decorator?.namedChildren[0]);
+}
+
+function methodSemantics(outerNode) {
+  const decorators = outerNode.type === "decorated_definition"
+    ? outerNode.namedChildren.filter((child) => child.type === "decorator").map(decoratorName)
+    : [];
+  if (decorators.includes("staticmethod")) return { receiverKind: null, static: true };
+  if (decorators.includes("classmethod")) return { receiverKind: "class", static: false };
+  return { receiverKind: "instance", static: false };
+}
+
+function extractCallable(node, { ownerName = null, receiverKind = null, staticValue = null } = {}) {
   const nameNode = node.childForFieldName("name");
-  if (!nameNode) return null;
+  const name = safeIdentifier(nameNode);
+  if (!name) return null;
   const common = {
-    name: nameNode.text,
+    name,
     lineRange: lineRange(node),
-    parameters: extractParameters(node.childForFieldName("parameters")),
-    returnType: nameNode.text === "__init__" ? null : node.childForFieldName("return_type")?.text ?? null,
+    parameters: extractParameters(node.childForFieldName("parameters"), receiverKind),
+    returnType: name === "__init__" ? null : safeReference(node.childForFieldName("return_type")),
     visibility: null,
     async: node.children.some((child) => child.type === "async"),
     exported: null
   };
-  return ownerName ? { ...common, ownerName, static: null } : common;
+  return ownerName ? { ...common, ownerName, static: staticValue } : common;
 }
 
 function extractProperty(node) {
   if (node.type !== "expression_statement") return null;
   const assignment = findChild(node, "assignment");
   if (!assignment) return null;
-  const nameNode = assignment.childForFieldName("left");
-  const typeNode = assignment.childForFieldName("type");
-  if (nameNode?.type !== "identifier" || !typeNode) return null;
+  const name = safeIdentifier(assignment.childForFieldName("left"));
+  const type = safeReference(assignment.childForFieldName("type"));
+  if (!name || !type) return null;
   return {
-    name: nameNode.text,
-    type: typeNode.text,
+    name,
+    type,
     visibility: null,
     static: null,
     lineRange: lineRange(node)
   };
 }
 
-function extractSuperclasses(node) {
+function extractSuperclasses(node, warnHeritage) {
   const superclasses = node.childForFieldName("superclasses");
   if (!superclasses) return [];
-  return superclasses.namedChildren
-    .filter((child) => child.type !== "keyword_argument")
-    .map((child) => child.text);
+  const values = [];
+  for (const child of superclasses.namedChildren) {
+    if (child.type === "keyword_argument") continue;
+    const value = safeReference(child);
+    if (value) values.push(value);
+    else warnHeritage(child);
+  }
+  return values;
 }
 
 function importSpecifier(node) {
   if (node.type === "aliased_import") {
-    const alias = node.childForFieldName("alias") ?? node.namedChildren.at(-1);
-    return alias?.text ?? null;
+    return safeIdentifier(node.childForFieldName("alias") ?? node.namedChildren.at(-1));
   }
-  return node.text;
+  return node.type === "dotted_name" ? safeReference(node) : node.type === "wildcard_import" ? "*" : null;
 }
 
 function extractImport(node) {
@@ -89,10 +148,11 @@ function extractImport(node) {
   for (const child of node.namedChildren) {
     if (!["dotted_name", "aliased_import"].includes(child.type)) continue;
     const sourceNode = child.type === "aliased_import" ? findChild(child, "dotted_name") : child;
+    const source = safeReference(sourceNode);
     const specifier = importSpecifier(child);
-    if (!sourceNode || !specifier) continue;
+    if (!source || !specifier) continue;
     candidates.push({
-      source: sourceNode.text,
+      source,
       specifiers: [specifier],
       lineNumber: node.startPosition.row + 1,
       kind: "module"
@@ -115,7 +175,7 @@ function extractFromImport(node) {
   }
 
   return {
-    source: moduleNode.text,
+    source: moduleNode.type === "relative_import" ? moduleNode.text : safeReference(moduleNode),
     specifiers,
     lineNumber: node.startPosition.row + 1,
     kind: "module"
@@ -124,10 +184,10 @@ function extractFromImport(node) {
 
 function callableContext(node, context) {
   if (node.type === "class_definition") {
-    return { ...context, ownerName: node.childForFieldName("name")?.text ?? null };
+    return { ...context, ownerName: safeIdentifier(node.childForFieldName("name")) };
   }
   if (node.type === "function_definition") {
-    return { ...context, callerName: node.childForFieldName("name")?.text ?? null };
+    return { ...context, callerName: safeIdentifier(node.childForFieldName("name")) };
   }
   return context;
 }
@@ -139,9 +199,17 @@ function calleeText(node) {
   if (node.type !== "attribute") return null;
 
   const object = calleeText(node.childForFieldName("object"));
-  const attribute = node.childForFieldName("attribute");
-  if (!object || attribute?.type !== "identifier") return null;
-  return `${object}.${attribute.text}`;
+  const attribute = safeIdentifier(node.childForFieldName("attribute"));
+  return object && attribute ? `${object}.${attribute}` : null;
+}
+
+function traversalChildren(node) {
+  if (!["default_parameter", "typed_default_parameter"].includes(node.type)) {
+    return node.namedChildren;
+  }
+
+  const defaultValue = node.childForFieldName("value");
+  return defaultValue ? node.namedChildren.filter((child) => child.id !== defaultValue.id) : node.namedChildren;
 }
 
 function extractCalls(rootNode) {
@@ -160,7 +228,7 @@ function extractCalls(rootNode) {
         });
       }
     }
-    for (const child of node.namedChildren) visit(child, current);
+    for (const child of traversalChildren(node)) visit(child, current);
   };
 
   visit(rootNode, { callerName: null, ownerName: null });
@@ -173,6 +241,14 @@ export class PythonExtractor {
     const methods = [];
     const functions = [];
     const importCandidates = [];
+    const warnings = [];
+    const warningSet = new Set();
+    const warnHeritage = (node) => {
+      const warning = `Skipped dynamic Python heritage at line ${node.startPosition.row + 1}`;
+      if (warningSet.has(warning)) return;
+      warningSet.add(warning);
+      warnings.push(warning);
+    };
 
     for (const outerNode of rootNode.namedChildren) {
       const node = unwrapDecorated(outerNode);
@@ -181,7 +257,7 @@ export class PythonExtractor {
         const callable = extractCallable(node);
         if (callable) functions.push(callable);
       } else if (node.type === "class_definition") {
-        const name = node.childForFieldName("name")?.text;
+        const name = safeIdentifier(node.childForFieldName("name"));
         if (!name) continue;
         const properties = [];
         const body = node.childForFieldName("body");
@@ -190,7 +266,12 @@ export class PythonExtractor {
           for (const outerMember of body.namedChildren) {
             const member = unwrapDecorated(outerMember);
             if (member.type === "function_definition") {
-              const method = extractCallable(member, name);
+              const semantics = methodSemantics(outerMember);
+              const method = extractCallable(member, {
+                ownerName: name,
+                receiverKind: semantics.receiverKind,
+                staticValue: semantics.static
+              });
               if (method) methods.push(method);
             } else {
               const property = extractProperty(member);
@@ -204,7 +285,7 @@ export class PythonExtractor {
           name,
           lineRange: lineRange(node),
           properties,
-          extends: extractSuperclasses(node),
+          extends: extractSuperclasses(node, warnHeritage),
           implements: [],
           exported: null
         });
@@ -212,7 +293,7 @@ export class PythonExtractor {
         importCandidates.push(...extractImport(node));
       } else if (node.type === "import_from_statement") {
         const candidate = extractFromImport(node);
-        if (candidate) importCandidates.push(candidate);
+        if (candidate?.source) importCandidates.push(candidate);
       }
     }
 
@@ -224,7 +305,7 @@ export class PythonExtractor {
       functions,
       importCandidates,
       callCandidates: extractCalls(rootNode),
-      warnings: []
+      warnings
     };
   }
 }

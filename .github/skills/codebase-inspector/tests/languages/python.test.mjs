@@ -48,7 +48,7 @@ describe("Python rich symbol extraction", () => {
         parameters: [{ name: "prefix", type: "str" }],
         returnType: null,
         visibility: null,
-        static: null,
+        static: false,
         async: false,
         exported: null
       },
@@ -59,7 +59,7 @@ describe("Python rich symbol extraction", () => {
         parameters: [{ name: "name", type: "str" }],
         returnType: "str",
         visibility: null,
-        static: null,
+        static: false,
         async: true,
         exported: null
       }
@@ -145,5 +145,94 @@ describe("Python rich symbol extraction", () => {
         ]
       })
     ]);
+  });
+
+  it("applies receiver removal and static flags from method semantics", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/receivers.py",
+      language: "python",
+      content: [
+        "def free(self, cls, value): pass",
+        "class Receiver:",
+        "    def instance(self, cls, value): pass",
+        "    def unconventional(receiver, value): pass",
+        "    @classmethod",
+        "    def make(klass, self, value): pass",
+        "    @staticmethod",
+        "    def static(self, cls, value): pass",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.functions).toEqual([expect.objectContaining({
+      name: "free",
+      parameters: [
+        { name: "self", type: null },
+        { name: "cls", type: null },
+        { name: "value", type: null }
+      ]
+    })]);
+    expect(result.methods).toEqual([
+      expect.objectContaining({
+        name: "instance",
+        parameters: [{ name: "cls", type: null }, { name: "value", type: null }],
+        static: false
+      }),
+      expect.objectContaining({
+        name: "unconventional",
+        parameters: [{ name: "value", type: null }],
+        static: false
+      }),
+      expect.objectContaining({
+        name: "make",
+        parameters: [{ name: "self", type: null }, { name: "value", type: null }],
+        static: false
+      }),
+      expect.objectContaining({
+        name: "static",
+        parameters: [
+          { name: "self", type: null },
+          { name: "cls", type: null },
+          { name: "value", type: null }
+        ],
+        static: true
+      })
+    ]);
+  });
+
+  it("skips dynamic Python heritage without serializing expression text", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/privacy.py",
+      language: "python",
+      content: [
+        "class Unsafe(factory('heritage-secret')): pass",
+        "class Safe(package.Base, Generic[Item]): pass",
+        ""
+      ].join("\n")
+    });
+
+    expect(result.types).toEqual([
+      expect.objectContaining({ name: "Unsafe", extends: [] }),
+      expect.objectContaining({ name: "Safe", extends: ["package.Base", "Generic[Item]"] })
+    ]);
+    expect(result.warnings).toEqual(["Skipped dynamic Python heritage at line 1"]);
+    expect(JSON.stringify(result)).not.toContain("heritage-secret");
+  });
+
+  it("does not traverse Python parameter default expressions", async () => {
+    const result = await registry.analyzeFile({
+      path: "src/defaults.py",
+      language: "python",
+      content: "def configured(value: str = make_default('default-secret')) -> str: return value\n"
+    });
+
+    expect(result.functions).toEqual([expect.objectContaining({
+      name: "configured",
+      parameters: [{ name: "value", type: "str" }],
+      returnType: "str"
+    })]);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("make_default");
+    expect(serialized).not.toContain("default-secret");
   });
 });
