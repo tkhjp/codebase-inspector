@@ -11,6 +11,8 @@ const fixedDosTimestamp = 0x00210000;
 async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = await Promise.all(entries.map(async (entry) => {
+    const lowerName = entry.name.toLowerCase();
+    if (lowerName.endsWith(".tmp") || lowerName.endsWith(".bak")) return [];
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) return collectFiles(path);
     if (entry.isFile()) return [path];
@@ -19,29 +21,33 @@ async function collectFiles(directory) {
   return files.flat();
 }
 
-function archivePath(path) {
-  return relative(skillDir, path).split(sep).join("/");
+function archivePath(path, sourceRoot) {
+  return relative(sourceRoot, path).split(sep).join("/");
 }
 
-export async function buildRelease({ outputPath = resolve(skillDir, archiveName) } = {}) {
+export async function buildRelease({
+  sourceRoot = skillDir,
+  repositoryRoot = repositoryDir,
+  outputPath = resolve(sourceRoot, archiveName)
+} = {}) {
   const relativeFiles = [
     "SKILL.md",
     "README.ja.md",
     "THIRD_PARTY_LICENSES.json",
     "package-lock.json",
     "package.json"
-  ].map((path) => resolve(skillDir, path));
+  ].map((path) => resolve(sourceRoot, path));
   const files = [
     ...relativeFiles,
-    ...(await collectFiles(resolve(skillDir, "lib"))),
-    ...(await collectFiles(resolve(skillDir, "vendor"))),
-    resolve(skillDir, "scripts/run.mjs"),
-    resolve(skillDir, "scripts/setup.mjs")
+    ...(await collectFiles(resolve(sourceRoot, "lib"))),
+    ...(await collectFiles(resolve(sourceRoot, "vendor"))),
+    resolve(sourceRoot, "scripts/run.mjs"),
+    resolve(sourceRoot, "scripts/setup.mjs")
   ];
   const entries = [
-    ...files.map((path) => ({ path, name: archivePath(path) })),
-    { path: resolve(repositoryDir, "LICENSE"), name: "LICENSE" },
-    { path: resolve(repositoryDir, "NOTICE"), name: "NOTICE" }
+    ...files.map((path) => ({ path, name: archivePath(path, sourceRoot) })),
+    { path: resolve(repositoryRoot, "LICENSE"), name: "LICENSE" },
+    { path: resolve(repositoryRoot, "NOTICE"), name: "NOTICE" }
   ].sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
 
   const archive = new AdmZip({ noSort: true });

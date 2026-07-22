@@ -27,6 +27,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run lint
+      - run: npm audit
       - run: npm audit --omit=dev
       - run: npm run check:licenses
       - run: npm run release:zip

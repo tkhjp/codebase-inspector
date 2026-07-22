@@ -38,7 +38,6 @@
     "adm-zip": "0.6.0",
     "esbuild": "0.28.1",
     "eslint": "9.39.2",
-    "license-checker-rseidelsohn": "4.4.2",
     "vitest": "3.2.7"
   }
 }

@@ -1,6 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "../lib/cli/args.mjs";
+import { normalizeArgv, parseArgs } from "../lib/cli/args.mjs";
 
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -12,7 +12,7 @@ export async function main({
   runAnalysisImpl
 } = {}) {
   try {
-    const options = parseArgs(argv, cwd);
+    const options = parseArgs(normalizeArgv(argv), cwd);
     const ensure = ensureRuntimeImpl ?? (await import("./setup.mjs")).ensureRuntime;
     await ensure({ skillDir });
     const runPreflight = preflightImpl ?? (await import("../lib/runtime/preflight.mjs")).preflight;

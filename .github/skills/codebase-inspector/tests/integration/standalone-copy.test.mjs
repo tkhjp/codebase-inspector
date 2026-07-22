@@ -1,7 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { access, cp, mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { access, cp, mkdir, readFile } from "node:fs/promises";
+import { basename, dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
@@ -34,14 +33,23 @@ test("a copied Skill installs production dependencies and produces all six artif
       ""
     ].join("\n")
   });
-  const copiedSkill = join(await mkdtemp(join(tmpdir(), "codebase-inspector-skill-copy-")), "codebase-inspector");
+  const copiedSkill = join(root, ".github/skills/codebase-inspector");
 
+  for (let ancestor = resolve(root); ancestor !== parse(ancestor).root; ancestor = dirname(ancestor)) {
+    expect(basename(ancestor)).not.toBe("node_modules");
+  }
+
+  await mkdir(dirname(copiedSkill), { recursive: true });
   await cp(skillDir, copiedSkill, {
     recursive: true,
     filter: (source) => !source.includes(`${join(skillDir, "node_modules")}/`) && !source.endsWith("node_modules")
   });
   await execFile("npm", ["ci", "--omit=dev"], { cwd: copiedSkill, encoding: "utf8" });
-  await execFile(process.execPath, ["scripts/run.mjs", root], { cwd: copiedSkill, encoding: "utf8" });
+  await execFile(process.execPath, [
+    ".github/skills/codebase-inspector/scripts/run.mjs",
+    "--skill-arguments",
+    ""
+  ], { cwd: root, encoding: "utf8" });
 
   const output = join(root, ".code-understanding");
   const artifacts = Object.fromEntries(await Promise.all(artifactNames.map(async (name) => [name, await readFile(join(output, name), "utf8")])));

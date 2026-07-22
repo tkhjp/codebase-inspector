@@ -18,7 +18,7 @@ Copilot では次のコマンドを使います。
 /codebase-inspector [project-path] [--tracked] [--output <dir>] [--keep-intermediate]
 ```
 
-通常は対象リポジトリ直下に `.code-understanding/` を作成します。`project-path` を省略すると現在のディレクトリを対象にします。
+通常は対象リポジトリ直下に `.code-understanding/` を作成します。`project-path` を省略すると現在のディレクトリを対象にします。Copilot は対象リポジトリのルートから Skill 内部の `--skill-arguments` transport を使って引数を渡します。
 
 ## 出力
 
@@ -35,7 +35,7 @@ JSON と Markdown は安定した順序と LF 改行で出力されます。同�
 
 ## ファイル選択
 
-既定のローカルモードは、Git 管理下でない読み取り可能なソースファイルも対象にできます。`--tracked` は Git が追跡しているファイルだけを対象にします。`--output <dir>` は対象リポジトリ内の出力先を指定し、`--keep-intermediate` は中間情報を保持します。
+両方のモードで Git が追跡しているファイルだけを解析します。既定モードは、出力先だけを隠す Codebase Inspector 所有ブロックを `.git/info/exclude` に追加し、追跡済みの `.gitignore` は変更しません。`--tracked` はこの所有ブロックを削除し、残さないため、生成した出力を version control に含められます。`--output <dir>` は対象リポジトリ内の出力先を指定します。`--keep-intermediate` は受け付けてレポートに記録しますが、追加ファイルは生成しません。
 
 ## 対応言語
 

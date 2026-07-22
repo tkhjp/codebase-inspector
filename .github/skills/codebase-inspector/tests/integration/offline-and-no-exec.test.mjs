@@ -1,6 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { access, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, chmod, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -9,37 +8,98 @@ import { createFixtureRepo } from "../helpers/fixture-repo.mjs";
 
 const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const guardPath = resolve(dirname(fileURLToPath(import.meta.url)), "offline-guard-preload.cjs");
+const artifactNames = ["analysis-report.json", "classes.md", "code-graph.json", "functions.md", "methods.md", "symbol-index.json"];
 
 async function exists(path) {
   return access(path).then(() => true, () => false);
 }
 
-test("analysis works offline without executing target package scripts, Makefiles, or source", async () => {
-  expect(await exists(join(skillDir, "SKILL.md"))).toBe(true);
+function quotedCommand(...parts) {
+  return parts.map((part) => `"${String(part).replaceAll('"', '\\"')}"`).join(" ");
+}
 
+test("analysis proves offline and no-exec guards while leaving every absolute sentinel absent", async () => {
   const root = await createFixtureRepo({
-    "Makefile": "all:\n\t@touch .sentinel\n",
-    "package.json": "{\"scripts\":{\"test\":\"touch .sentinel\",\"build\":\"touch .sentinel\"}}\n",
-    "src/dangerous.js": "require('node:fs').writeFileSync('.sentinel', 'executed');\nexport const value = 1;\n"
+    "Makefile": "all:\n\t@echo placeholder\n",
+    "package.json": "{\"scripts\":{}}\n",
+    "src/dangerous.js": "export const placeholder = true;\n",
+    "src/example.ts": "export class Example { run() {} }\nexport function helper() {}\n",
+    "tools/target-probe.mjs": "export {};\n",
+    "tools/write-sentinel.mjs": "export {};\n"
   });
-  const shimDirectory = await mkdtemp(join(tmpdir(), "codebase-inspector-network-shim-"));
-  const shimPath = join(shimDirectory, "reject-network.cjs");
-  const sentinel = join(root, ".sentinel");
+  const paths = {
+    packageScript: join(root, "package-script.sentinel"),
+    makefile: join(root, "makefile.sentinel"),
+    source: join(root, "source.sentinel"),
+    processProbe: join(root, "process-probe.sentinel"),
+    proof: join(root, ".git/offline-guard-proof.json")
+  };
+  const writerPath = join(root, "tools/write-sentinel.mjs");
+  const probePath = join(root, "tools/target-probe.mjs");
 
-  await writeFile(shimPath, [
-    "const reject = () => { throw new Error('network access is forbidden during analysis'); };",
-    "require('node:net').connect = reject;",
-    "require('node:net').createConnection = reject;",
-    "require('node:http').request = reject;",
-    "require('node:https').request = reject;",
-    "require('node:tls').connect = reject;"
-  ].join("\n"));
+  await writeFile(writerPath, "import { writeFileSync } from 'node:fs';\nwriteFileSync(process.argv[2], 'executed');\n");
+  await writeFile(probePath, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(paths.processProbe)}, 'executed');\n`);
+  await chmod(probePath, 0o755);
+  await writeFile(join(root, "package.json"), `${JSON.stringify({
+    scripts: {
+      build: quotedCommand(process.execPath, writerPath, paths.packageScript),
+      test: quotedCommand(process.execPath, writerPath, paths.packageScript)
+    }
+  }, null, 2)}\n`);
+  await writeFile(join(root, "Makefile"), `all:\n\t@${quotedCommand(process.execPath, writerPath, paths.makefile)}\n`);
+  await writeFile(join(root, "src/dangerous.js"), `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(paths.source)}, "executed");\nexport const value = 1;\n`);
+  await execFile("git", ["-C", root, "add", "."]);
+  await execFile("git", ["-C", root, "commit", "-qm", "absolute no-exec sentinels"]);
 
-  await execFile(process.execPath, ["scripts/run.mjs", root], {
-    cwd: skillDir,
+  const guardConfig = JSON.stringify({
+    root: await realpath(root),
+    skillDir: await realpath(skillDir),
+    proofPath: paths.proof,
+    processProbe: probePath
+  });
+  const nodeOptions = `--require "${guardPath}"`;
+  const result = await execFile(process.execPath, [resolve(skillDir, "scripts/run.mjs"), "--skill-arguments", ""], {
+    cwd: root,
     encoding: "utf8",
-    env: { ...process.env, NODE_OPTIONS: `--require=${shimPath}` }
+    env: {
+      ...process.env,
+      CODEBASE_INSPECTOR_GUARD_CONFIG: guardConfig,
+      CODEBASE_INSPECTOR_GUARD_PRIMARY: "1",
+      NODE_OPTIONS: nodeOptions
+    }
   });
 
-  expect(await exists(sentinel)).toBe(false);
+  expect(result.stderr).toBe("");
+  expect(result.stdout).toMatch(/Codebase Inspector: (complete|partial)/);
+  const proof = JSON.parse(await readFile(paths.proof, "utf8"));
+  const expectedGuards = [
+    "child_process.exec",
+    "child_process.execFile",
+    "child_process.execFileSync",
+    "child_process.execSync",
+    "child_process.fork",
+    "child_process.spawn",
+    "child_process.spawnSync",
+    "dgram.Socket.prototype.connect",
+    "dgram.Socket.prototype.send",
+    "dgram.createSocket",
+    "http.get",
+    "http.request",
+    "https.get",
+    "https.request",
+    "net.Socket.prototype.connect",
+    "net.connect",
+    "net.createConnection",
+    "tls.connect"
+  ];
+  if (typeof globalThis.fetch === "function") expectedGuards.push("global.fetch");
+  if (typeof globalThis.WebSocket === "function") expectedGuards.push("global.WebSocket");
+  expect(proof.sort()).toEqual(expectedGuards.sort());
+  await Promise.all(Object.values(paths).filter((path) => path.endsWith(".sentinel")).map(async (path) => {
+    expect(await exists(path)).toBe(false);
+  }));
+  await Promise.all(artifactNames.map(async (name) => {
+    expect(await exists(join(root, ".code-understanding", name))).toBe(true);
+  }));
 });

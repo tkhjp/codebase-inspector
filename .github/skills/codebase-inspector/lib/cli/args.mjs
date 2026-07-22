@@ -1,6 +1,57 @@
 import { resolve } from "node:path";
 
 const USAGE = "Usage: /codebase-inspector [project-path] [--tracked] [--output <dir>] [--keep-intermediate]";
+const SKILL_ARGUMENTS = "--skill-arguments";
+
+function malformed(message) {
+  throw new Error(`Malformed Skill arguments: ${message}`);
+}
+
+function tokenizeSkillArguments(payload) {
+  const tokens = [];
+  let token = "";
+  let tokenStarted = false;
+  let quote = null;
+  let escaping = false;
+
+  for (const character of payload) {
+    if (escaping) {
+      token += character;
+      tokenStarted = true;
+      escaping = false;
+    } else if (character === "\\") {
+      escaping = true;
+      tokenStarted = true;
+    } else if (quote) {
+      if (character === quote) quote = null;
+      else token += character;
+      tokenStarted = true;
+    } else if (character === "'" || character === '"') {
+      quote = character;
+      tokenStarted = true;
+    } else if (/\s/.test(character)) {
+      if (tokenStarted) {
+        tokens.push(token);
+        token = "";
+        tokenStarted = false;
+      }
+    } else {
+      token += character;
+      tokenStarted = true;
+    }
+  }
+
+  if (escaping) malformed("trailing escape");
+  if (quote) malformed("unterminated quote");
+  if (tokenStarted) tokens.push(token);
+  return tokens;
+}
+
+export function normalizeArgv(argv) {
+  if (argv[0] !== SKILL_ARGUMENTS) return argv;
+  if (argv.length !== 2 || typeof argv[1] !== "string") malformed(`${SKILL_ARGUMENTS} requires one payload`);
+  return tokenizeSkillArguments(argv[1]);
+}
 
 export function parseArgs(argv, cwd) {
   let projectPath;
