@@ -12,14 +12,26 @@ function validSymbolIndex() {
   return {
     schemaVersion: "1.0.0",
     project: { name: "x", root: null, gitCommitHash: "a", workingTreeDirty: false, languages: ["typescript"], skillVersion: "0.1.0" },
-    files: [{ id: "file:a.ts", path: "a.ts", language: "typescript", category: "source", lineCount: 1, parseStatus: "parsed", typeIds: ["type:a.ts:class:A:1"], methodIds: ["method:a.ts:A:m:1"], functionIds: ["function:a.ts:f:1"] }],
-    types: [{ id: "type:a.ts:class:A:1", kind: "class", name: "A", filePath: "a.ts", lineRange: [1, 1], properties: [], methodIds: ["method:a.ts:A:m:1"], extends: [], implements: [], exported: true }],
-    methods: [{ id: "method:a.ts:A:m:1", name: "m", ownerTypeId: "type:a.ts:class:A:1", filePath: "a.ts", lineRange: [1, 1], parameters: [], returnType: null, visibility: null, static: null, async: null, exported: null }],
-    functions: [{ id: "function:a.ts:f:1", name: "f", filePath: "a.ts", lineRange: [1, 1], parameters: [], returnType: null, visibility: null, async: null, exported: null }],
+    files: [
+      { id: "file:a.ts", path: "a.ts", language: "typescript", category: "source", lineCount: 1, parseStatus: "parsed", typeIds: ["type:a.ts:class:A:1"], methodIds: ["method:a.ts:A:m:1"], functionIds: ["function:a.ts:f:1"] },
+      { id: "file:b.ts", path: "b.ts", language: "typescript", category: "source", lineCount: 1, parseStatus: "parsed", typeIds: ["type:b.ts:class:B:1"], methodIds: ["method:b.ts:B:n:1"], functionIds: ["function:b.ts:g:1"] }
+    ],
+    types: [
+      { id: "type:a.ts:class:A:1", kind: "class", name: "A", filePath: "a.ts", lineRange: [1, 1], properties: [], methodIds: ["method:a.ts:A:m:1"], extends: [], implements: [], exported: true },
+      { id: "type:b.ts:class:B:1", kind: "class", name: "B", filePath: "b.ts", lineRange: [1, 1], properties: [], methodIds: ["method:b.ts:B:n:1"], extends: [], implements: [], exported: true }
+    ],
+    methods: [
+      { id: "method:a.ts:A:m:1", name: "m", ownerTypeId: "type:a.ts:class:A:1", filePath: "a.ts", lineRange: [1, 1], parameters: [], returnType: null, visibility: null, static: null, async: null, exported: null },
+      { id: "method:b.ts:B:n:1", name: "n", ownerTypeId: "type:b.ts:class:B:1", filePath: "b.ts", lineRange: [1, 1], parameters: [], returnType: null, visibility: null, static: null, async: null, exported: null }
+    ],
+    functions: [
+      { id: "function:a.ts:f:1", name: "f", filePath: "a.ts", lineRange: [1, 1], parameters: [], returnType: null, visibility: null, async: null, exported: null },
+      { id: "function:b.ts:g:1", name: "g", filePath: "b.ts", lineRange: [1, 1], parameters: [], returnType: null, visibility: null, async: null, exported: null }
+    ],
     imports: [],
-    calls: [],
-    unresolvedCalls: [],
-    coverage: { trackedFiles: 1, supportedFiles: 1, parsedFiles: 1, warningFiles: 0, unsupportedFiles: 0 }
+    calls: [{ callerId: "function:a.ts:f:1", calleeId: "method:a.ts:A:m:1", filePath: "a.ts", lineNumber: 1 }],
+    unresolvedCalls: [{ callerId: "method:a.ts:A:m:1", calleeText: "missing", filePath: "a.ts", lineNumber: 1, reason: "callee-not-found" }],
+    coverage: { trackedFiles: 2, supportedFiles: 2, parsedFiles: 2, warningFiles: 0, unsupportedFiles: 0 }
   };
 }
 
@@ -94,6 +106,83 @@ it.each([
   const invalid = validSymbolIndex();
   invalid[collectionName][0].filePath = "missing.ts";
   expect(() => parseSymbolIndex(invalid)).toThrow(new RegExp(`${recordName} filePath`));
+});
+
+it("accepts a fully coherent SymbolIndex", () => {
+  expect(parseSymbolIndex(validSymbolIndex())).toEqual(validSymbolIndex());
+});
+
+it("rejects duplicate File paths", () => {
+  const invalid = validSymbolIndex();
+  invalid.files[1].path = "a.ts";
+  expect(() => parseSymbolIndex(invalid)).toThrow(/Duplicate File path/);
+});
+
+it.each([
+  ["typeIds", "type:a.ts:class:A:1"],
+  ["methodIds", "method:a.ts:A:m:1"],
+  ["functionIds", "function:a.ts:f:1"]
+])("rejects duplicate File %s entries", (membership, id) => {
+  const invalid = validSymbolIndex();
+  invalid.files[0][membership].push(id);
+  expect(() => parseSymbolIndex(invalid)).toThrow(new RegExp(`Duplicate File ${membership} entry`));
+});
+
+it.each([
+  ["Type", "typeIds", "type:a.ts:class:A:1"],
+  ["Function", "functionIds", "function:a.ts:f:1"]
+])("requires every %s to appear exactly once in its matching File only", (recordName, membership, id) => {
+  const missing = validSymbolIndex();
+  missing.files[0][membership] = [];
+  expect(() => parseSymbolIndex(missing)).toThrow(new RegExp(`Missing ${recordName} membership`));
+  const misplaced = validSymbolIndex();
+  misplaced.files[1][membership].push(id);
+  expect(() => parseSymbolIndex(misplaced)).toThrow(new RegExp(`${recordName}.*matching File`));
+});
+
+it("requires every Method to appear exactly once in its matching File and owner Type", () => {
+  const missingFile = validSymbolIndex();
+  missingFile.files[0].methodIds = [];
+  expect(() => parseSymbolIndex(missingFile)).toThrow(/Missing Method File membership/);
+  const misplacedFile = validSymbolIndex();
+  misplacedFile.files[1].methodIds.push("method:a.ts:A:m:1");
+  expect(() => parseSymbolIndex(misplacedFile)).toThrow(/Method.*matching File/);
+  const missingOwner = validSymbolIndex();
+  missingOwner.types[0].methodIds = [];
+  expect(() => parseSymbolIndex(missingOwner)).toThrow(/Missing Method owner Type membership/);
+});
+
+it("rejects duplicate Method membership in an owner Type", () => {
+  const duplicateOwner = validSymbolIndex();
+  duplicateOwner.types[0].methodIds.push("method:a.ts:A:m:1");
+  expect(() => parseSymbolIndex(duplicateOwner)).toThrow(/Duplicate Type methodIds entry/);
+});
+
+it("requires Type method membership and Method owners to share the Type file", () => {
+  const wrongTypeEntry = validSymbolIndex();
+  wrongTypeEntry.types[0].methodIds = ["method:b.ts:B:n:1"];
+  expect(() => parseSymbolIndex(wrongTypeEntry)).toThrow(/Type methodIds entry must match Method owner and file/);
+  const crossFileOwner = validSymbolIndex();
+  crossFileOwner.methods[0].ownerTypeId = "type:b.ts:class:B:1";
+  expect(() => parseSymbolIndex(crossFileOwner)).toThrow(/Method owner Type must share Method filePath/);
+});
+
+it.each([
+  ["calls", "Call"],
+  ["unresolvedCalls", "Unresolved call"]
+])("requires every %s filePath to reference a File", (collectionName, recordName) => {
+  const invalid = validSymbolIndex();
+  invalid[collectionName][0].filePath = "missing.ts";
+  expect(() => parseSymbolIndex(invalid)).toThrow(new RegExp(`${recordName} filePath`));
+});
+
+it.each([
+  ["calls", "Call"],
+  ["unresolvedCalls", "Unresolved call"]
+])("requires every %s filePath to match its known caller", (collectionName, recordName) => {
+  const invalid = validSymbolIndex();
+  invalid[collectionName][0].filePath = "b.ts";
+  expect(() => parseSymbolIndex(invalid)).toThrow(new RegExp(`${recordName} filePath must match caller`));
 });
 
 it("parses a valid CodeGraph and rejects an edge to an unknown node", () => {

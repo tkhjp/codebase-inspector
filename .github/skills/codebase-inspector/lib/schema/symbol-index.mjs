@@ -92,8 +92,16 @@ function addDanglingReference(context, path, value) {
   context.addIssue({ code: z.ZodIssueCode.custom, path, message: `Dangling reference: ${value}` });
 }
 
+function addInvariantIssue(context, path, message) {
+  context.addIssue({ code: z.ZodIssueCode.custom, path, message });
+}
+
 function addDuplicateId(context, collection, label, index, id) {
-  context.addIssue({ code: z.ZodIssueCode.custom, path: [collection, index, "id"], message: `Duplicate ${label} ID: ${id}` });
+  addInvariantIssue(context, [collection, index, "id"], `Duplicate ${label} ID: ${id}`);
+}
+
+function countOccurrences(values, value) {
+  return values.filter((entry) => entry === value).length;
 }
 
 export const SymbolIndexSchema = z.object({
@@ -108,14 +116,8 @@ export const SymbolIndexSchema = z.object({
   unresolvedCalls: z.array(UnresolvedCallSchema),
   coverage: CoverageSchema
 }).strict().superRefine((index, context) => {
-  const fileIds = new Set(index.files.map((file) => file.id));
-  const filePaths = new Set(index.files.map((file) => file.path));
-  const typeIds = new Set(index.types.map((type) => type.id));
-  const methodIds = new Set(index.methods.map((method) => method.id));
-  const functionIds = new Set(index.functions.map((func) => func.id));
-  const callableIds = new Set([...methodIds, ...functionIds]);
-
-  [["files", "File", index.files], ["types", "Type", index.types], ["methods", "Method", index.methods], ["functions", "Function", index.functions]].forEach(([collection, label, records]) => {
+  const collections = [["files", "File", index.files], ["types", "Type", index.types], ["methods", "Method", index.methods], ["functions", "Function", index.functions]];
+  collections.forEach(([collection, label, records]) => {
     const seenIds = new Set();
     records.forEach((record, recordIndex) => {
       if (seenIds.has(record.id)) addDuplicateId(context, collection, label, recordIndex, record.id);
@@ -123,37 +125,76 @@ export const SymbolIndexSchema = z.object({
     });
   });
 
+  const fileIds = new Set(index.files.map((file) => file.id));
+  const fileByPath = new Map();
   index.files.forEach((file, fileIndex) => {
-    file.typeIds.forEach((id, idIndex) => {
-      if (!typeIds.has(id)) addDanglingReference(context, ["files", fileIndex, "typeIds", idIndex], id);
-    });
-    file.methodIds.forEach((id, idIndex) => {
-      if (!methodIds.has(id)) addDanglingReference(context, ["files", fileIndex, "methodIds", idIndex], id);
-    });
-    file.functionIds.forEach((id, idIndex) => {
-      if (!functionIds.has(id)) addDanglingReference(context, ["files", fileIndex, "functionIds", idIndex], id);
+    if (fileByPath.has(file.path)) addInvariantIssue(context, ["files", fileIndex, "path"], `Duplicate File path: ${file.path}`);
+    fileByPath.set(file.path, file);
+  });
+  const typeById = new Map(index.types.map((type) => [type.id, type]));
+  const methodById = new Map(index.methods.map((method) => [method.id, method]));
+  const functionById = new Map(index.functions.map((func) => [func.id, func]));
+  const callableById = new Map([...methodById, ...functionById]);
+
+  index.files.forEach((file, fileIndex) => {
+    [["typeIds", "Type", typeById], ["methodIds", "Method", methodById], ["functionIds", "Function", functionById]].forEach(([field, label, recordsById]) => {
+      const seenIds = new Set();
+      file[field].forEach((id, idIndex) => {
+        if (seenIds.has(id)) addInvariantIssue(context, ["files", fileIndex, field, idIndex], `Duplicate File ${field} entry: ${id}`);
+        seenIds.add(id);
+        const record = recordsById.get(id);
+        if (!record) addDanglingReference(context, ["files", fileIndex, field, idIndex], id);
+        else if (record.filePath !== file.path) {
+          addInvariantIssue(context, ["files", fileIndex, field, idIndex], `${label} ${field} entry must belong to matching File path: ${id}`);
+        }
+      });
     });
   });
 
   index.types.forEach((type, typeIndex) => {
-    if (!filePaths.has(type.filePath)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["types", typeIndex, "filePath"], message: `Type filePath must reference an existing File path: ${type.filePath}` });
+    const file = fileByPath.get(type.filePath);
+    if (!file) {
+      addInvariantIssue(context, ["types", typeIndex, "filePath"], `Type filePath must reference an existing File path: ${type.filePath}`);
+    } else if (countOccurrences(file.typeIds, type.id) !== 1) {
+      addInvariantIssue(context, ["types", typeIndex, "id"], `Missing Type membership in matching File: ${type.id}`);
     }
+    const seenMethodIds = new Set();
     type.methodIds.forEach((id, idIndex) => {
-      if (!methodIds.has(id)) addDanglingReference(context, ["types", typeIndex, "methodIds", idIndex], id);
+      if (seenMethodIds.has(id)) addInvariantIssue(context, ["types", typeIndex, "methodIds", idIndex], `Duplicate Type methodIds entry: ${id}`);
+      seenMethodIds.add(id);
+      const method = methodById.get(id);
+      if (!method) addDanglingReference(context, ["types", typeIndex, "methodIds", idIndex], id);
+      else if (method.ownerTypeId !== type.id || method.filePath !== type.filePath) {
+        addInvariantIssue(context, ["types", typeIndex, "methodIds", idIndex], `Type methodIds entry must match Method owner and file: ${id}`);
+      }
     });
   });
 
   index.methods.forEach((method, methodIndex) => {
-    if (!filePaths.has(method.filePath)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["methods", methodIndex, "filePath"], message: `Method filePath must reference an existing File path: ${method.filePath}` });
+    const file = fileByPath.get(method.filePath);
+    if (!file) {
+      addInvariantIssue(context, ["methods", methodIndex, "filePath"], `Method filePath must reference an existing File path: ${method.filePath}`);
+    } else if (countOccurrences(file.methodIds, method.id) !== 1) {
+      addInvariantIssue(context, ["methods", methodIndex, "id"], `Missing Method File membership: ${method.id}`);
     }
-    if (!typeIds.has(method.ownerTypeId)) addDanglingReference(context, ["methods", methodIndex, "ownerTypeId"], method.ownerTypeId);
+    const ownerType = typeById.get(method.ownerTypeId);
+    if (!ownerType) addDanglingReference(context, ["methods", methodIndex, "ownerTypeId"], method.ownerTypeId);
+    else {
+      if (ownerType.filePath !== method.filePath) {
+        addInvariantIssue(context, ["methods", methodIndex, "ownerTypeId"], `Method owner Type must share Method filePath: ${method.ownerTypeId}`);
+      }
+      if (countOccurrences(ownerType.methodIds, method.id) !== 1) {
+        addInvariantIssue(context, ["methods", methodIndex, "ownerTypeId"], `Missing Method owner Type membership: ${method.id}`);
+      }
+    }
   });
 
   index.functions.forEach((func, functionIndex) => {
-    if (!filePaths.has(func.filePath)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["functions", functionIndex, "filePath"], message: `Function filePath must reference an existing File path: ${func.filePath}` });
+    const file = fileByPath.get(func.filePath);
+    if (!file) {
+      addInvariantIssue(context, ["functions", functionIndex, "filePath"], `Function filePath must reference an existing File path: ${func.filePath}`);
+    } else if (countOccurrences(file.functionIds, func.id) !== 1) {
+      addInvariantIssue(context, ["functions", functionIndex, "id"], `Missing Function membership in matching File: ${func.id}`);
     }
   });
 
@@ -163,12 +204,24 @@ export const SymbolIndexSchema = z.object({
   });
 
   index.calls.forEach((call, callIndex) => {
-    if (!callableIds.has(call.callerId)) addDanglingReference(context, ["calls", callIndex, "callerId"], call.callerId);
-    if (!callableIds.has(call.calleeId)) addDanglingReference(context, ["calls", callIndex, "calleeId"], call.calleeId);
+    const caller = callableById.get(call.callerId);
+    if (!caller) addDanglingReference(context, ["calls", callIndex, "callerId"], call.callerId);
+    if (!callableById.has(call.calleeId)) addDanglingReference(context, ["calls", callIndex, "calleeId"], call.calleeId);
+    if (!fileByPath.has(call.filePath)) {
+      addInvariantIssue(context, ["calls", callIndex, "filePath"], `Call filePath must reference a File path: ${call.filePath}`);
+    } else if (caller && caller.filePath !== call.filePath) {
+      addInvariantIssue(context, ["calls", callIndex, "filePath"], `Call filePath must match caller filePath: ${call.callerId}`);
+    }
   });
 
   index.unresolvedCalls.forEach((call, callIndex) => {
-    if (call.callerId !== null && !callableIds.has(call.callerId)) addDanglingReference(context, ["unresolvedCalls", callIndex, "callerId"], call.callerId);
+    const caller = call.callerId === null ? null : callableById.get(call.callerId);
+    if (call.callerId !== null && !caller) addDanglingReference(context, ["unresolvedCalls", callIndex, "callerId"], call.callerId);
+    if (!fileByPath.has(call.filePath)) {
+      addInvariantIssue(context, ["unresolvedCalls", callIndex, "filePath"], `Unresolved call filePath must reference a File path: ${call.filePath}`);
+    } else if (caller && caller.filePath !== call.filePath) {
+      addInvariantIssue(context, ["unresolvedCalls", callIndex, "filePath"], `Unresolved call filePath must match caller filePath: ${call.callerId}`);
+    }
   });
 });
 
