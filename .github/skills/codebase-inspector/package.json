@@ -33,6 +33,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.2",
     "adm-zip": "0.5.16",
+    "esbuild": "0.28.1",
     "eslint": "9.39.2",
     "license-checker-rseidelsohn": "4.4.2",
     "vitest": "3.2.4"

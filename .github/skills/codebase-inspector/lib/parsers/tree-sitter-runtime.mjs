@@ -85,8 +85,8 @@ export async function createTreeSitterRuntime(skillDir, extractors) {
         return emptyAnalysis(file, loadFailures.get(key) ?? `No Tree-sitter grammar is configured for ${file.language}`);
       }
 
-      const extractor = extractors.get(file.language);
-      if (!extractor) return emptyAnalysis(file, `No extractor is registered for ${file.language}`);
+      const adapter = extractors.get(file.language);
+      if (!adapter) return emptyAnalysis(file, `No extractor is registered for ${file.language}`);
 
       let parser;
       let tree;
@@ -95,7 +95,7 @@ export async function createTreeSitterRuntime(skillDir, extractors) {
         parser.setLanguage(language);
         tree = parser.parse(normalizedContent(file.content));
         if (!tree) return emptyAnalysis(file, `Tree-sitter could not parse ${file.path}`);
-        return parseRawFileAnalysis(extractor.extract(tree.rootNode, {
+        return parseRawFileAnalysis(adapter.extract(tree.rootNode, {
           filePath: file.path,
           language: file.language
         }));

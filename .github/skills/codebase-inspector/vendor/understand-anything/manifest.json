@@ -1,0 +1,93 @@
+{
+  "base": {
+    "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/base-extractor.mjs",
+    "generatedSha256": "2f0b3a7f93da7f1e168757c5e1a1e80c02d13f44b0c28b7effa27d2cf401e5b7",
+    "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/base-extractor.ts",
+    "sourceSha256": "8eafac3b46058365ef317b7427f09befc570ed420fc3629f0ae6bdba7725d689"
+  },
+  "extractors": [
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/cpp-extractor.mjs",
+      "generatedSha256": "1c7449ea81ba133350745e47bdf6ac2824deef05bd6afe4a0ede15fce0f9408f",
+      "name": "cpp",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/cpp-extractor.ts",
+      "sourceSha256": "02d01bf5713a8b6e494346cd220efc0ac80b25550605cc412810bc9e7b0b9e15"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/csharp-extractor.mjs",
+      "generatedSha256": "aa0514b2e056200d881a2fc268cab68b1f4e7487791b75649e3c85ea17c397ea",
+      "name": "csharp",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/csharp-extractor.ts",
+      "sourceSha256": "356a3e24aef8b4d16da2fe6bae1d3715d22c14360b843f5b984e8f54b420ea80"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/dart-extractor.mjs",
+      "generatedSha256": "27b75b4c6b0245d3cce5f495b2922b323399431e0d4859c448674c07ba6ff606",
+      "name": "dart",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/dart-extractor.ts",
+      "sourceSha256": "661d56f616e45a1fbb2b9c74fffe7233c8f21a7f9190f03ba6eb4d1f2a0295e4"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/go-extractor.mjs",
+      "generatedSha256": "2851544b3d36ae07c501ef3f6717dfe3f1cb03223f744d71c196960645c49486",
+      "name": "go",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/go-extractor.ts",
+      "sourceSha256": "71da081b3c434a7a783c3422205f5eb1146725ec423608f52d51b5a2ee93bc42"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/java-extractor.mjs",
+      "generatedSha256": "762546df072d8ae48f8ace8c63c4aa78340e18657998f6073b10618c78926cf3",
+      "name": "java",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/java-extractor.ts",
+      "sourceSha256": "5b37d416d3e086d3394596711b192ad9cfa5ecdc491abcea7fa03cd44370325a"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/kotlin-extractor.mjs",
+      "generatedSha256": "4d77e66d3937e46b0bdd01d926d71c0f3180614a7bb9bd3278d9df75aa6ae386",
+      "name": "kotlin",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/kotlin-extractor.ts",
+      "sourceSha256": "719805f7f60afc178580cab3e6e4f549ff4bb74cbd1c71a29789faa80a12ce24"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/php-extractor.mjs",
+      "generatedSha256": "07cb21bbeb383bdd94c854d11ab905d44e25b250d0cd3534136252ab8ecc10dd",
+      "name": "php",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/php-extractor.ts",
+      "sourceSha256": "822b4832fbe17216e3792c055cf9b146ab68b1a9f177674805484d685e600057"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/python-extractor.mjs",
+      "generatedSha256": "5f6608dc0866fe83cb194fa6a49f88fd5769f9961e77bca9952c67dedae667c3",
+      "name": "python",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/python-extractor.ts",
+      "sourceSha256": "22509ab258465bc1b2b54a9dec9f6a928586710ad1d285fc86416028215d5a6a"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/ruby-extractor.mjs",
+      "generatedSha256": "ed99ed99b9ace29a1915918dee60676bbd489d94a565d3921261077b65baef06",
+      "name": "ruby",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/ruby-extractor.ts",
+      "sourceSha256": "9ca10f3dabc58c259f2011337c5404bd83433d500185c91ffda2088aa3457d9d"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/rust-extractor.mjs",
+      "generatedSha256": "57acc24db5b5b625881ca1c0af784445e9bfb95cc20d99f3941edca3265e14b0",
+      "name": "rust",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/rust-extractor.ts",
+      "sourceSha256": "0480a8803b5ec396d6f2025fe1869d26145588043064fa45aeb55637675d070a"
+    },
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/extractors/typescript-extractor.mjs",
+      "generatedSha256": "bb42f6f1450432d43755f7130c559d718166e36fee8c1436a0fc19598b95884d",
+      "name": "typescript",
+      "sourcePath": "understand-anything-plugin/packages/core/src/plugins/extractors/typescript-extractor.ts",
+      "sourceSha256": "1c89405f3db6a1cf1f679144e886542405d3a7f8b99ba1d9593043888339457a"
+    }
+  ],
+  "localPatches": [],
+  "upstream": {
+    "commit": "54754a6f97051d1d76c8758353d8ea41afe502a6",
+    "license": "MIT",
+    "repository": "https://github.com/Egonex-AI/Understand-Anything"
+  }
+}

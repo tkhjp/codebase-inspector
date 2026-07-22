@@ -25,8 +25,8 @@ it("loads JavaScript grammar and returns strict raw analysis", async () => {
         parameters: [],
         returnType: null,
         visibility: null,
-        async: false,
-        exported: false
+        async: null,
+        exported: null
       }],
       importCandidates: [],
       callCandidates: [],

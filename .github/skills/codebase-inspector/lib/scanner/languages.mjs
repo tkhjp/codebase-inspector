@@ -25,10 +25,7 @@ export const LANGUAGE_BY_EXTENSION = Object.freeze({
   ".php": "php",
   ".rb": "ruby",
   ".rake": "ruby",
-  ".dart": "dart",
-  ".sh": "shell",
-  ".bash": "shell",
-  ".zsh": "shell"
+  ".dart": "dart"
 });
 
 const TEST_DIRECTORY = /(^|\/)(?:test|tests|__tests__|spec|specs|__specs__)(?:\/|$)/i;
