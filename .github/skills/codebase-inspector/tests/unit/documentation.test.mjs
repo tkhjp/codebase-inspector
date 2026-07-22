@@ -8,11 +8,24 @@ const skillDir = resolve(unitDir, "../..");
 const repositoryDir = resolve(skillDir, "../../..");
 
 test("Skill instructions use repository-root transport without executing argument text", async () => {
-  const skill = await readFile(resolve(skillDir, "SKILL.md"), "utf8");
+  const [skill, skillJapanese] = await Promise.all([
+    readFile(resolve(skillDir, "SKILL.md"), "utf8"),
+    readFile(resolve(skillDir, "README.ja.md"), "utf8")
+  ]);
+  const embeddedQuote = String.raw`\"`;
+  const terminalEmbeddedQuote = String.raw`\""`;
 
   expect(skill).toContain("from the target repository root");
   expect(skill).toContain('node .github/skills/codebase-inspector/scripts/run.mjs --skill-arguments "$ARGUMENTS"');
   expect(skill).not.toContain('node scripts/run.mjs "$ARGUMENTS"');
+  expect(skill).toContain(`A terminal \`${embeddedQuote}\` in a double-quoted token preserves the backslash and closes the token`);
+  expect(skill).toContain(String.raw`"C:\Program Files\repo\"`);
+  expect(skill).toContain(`use \`${embeddedQuote}\` before more token content`);
+  expect(skill).toContain(`use \`${terminalEmbeddedQuote}\` at the token end`);
+  expect(skillJapanese).toContain(`二重引用符 token 末尾の \`${embeddedQuote}\` は、バックスラッシュを保持して token を閉じます`);
+  expect(skillJapanese).toContain(String.raw`"C:\Program Files\repo\"`);
+  expect(skillJapanese).toContain(`token の途中では \`${embeddedQuote}\``);
+  expect(skillJapanese).toContain(`token 末尾では \`${terminalEmbeddedQuote}\``);
 });
 
 test("Skill and root documentation describe tracked scanning and output modes accurately", async () => {

@@ -96,6 +96,41 @@ describe("parseArgs", () => {
     });
   });
 
+  it.each([
+    ["unquoted", "C:\\work\\repo\\", "C:\\work\\repo\\", false],
+    ["single quoted with spaces", String.raw`'C:\Program Files\repo\' --tracked`, "C:\\Program Files\\repo\\", true],
+    ["double quoted with spaces", String.raw`"C:\Program Files\repo\" --tracked`, "C:\\Program Files\\repo\\", true]
+  ])("preserves a %s project path ending in backslash", async (_label, payload, expectedPath, tracked) => {
+    const cwd = resolve("fixture repository");
+    const result = await invoke(["--skill-arguments", payload], cwd);
+
+    expect(result.code).toBe(0);
+    expect(result.options.targetPath).toBe(resolve(cwd, expectedPath));
+    expect(result.options.tracked).toBe(tracked);
+  });
+
+  it.each([
+    ["unquoted", "--output C:\\reports\\", "C:\\reports\\"],
+    ["single quoted with spaces", String.raw`--output 'C:\Program Files\reports\'`, "C:\\Program Files\\reports\\"],
+    ["double quoted with spaces", String.raw`--output "C:\Program Files\reports\"`, "C:\\Program Files\\reports\\"]
+  ])("preserves a %s output path ending in backslash", async (_label, payload, expectedOutput) => {
+    const result = await invoke(["--skill-arguments", payload]);
+
+    expect(result.code).toBe(0);
+    expect(result.options.output).toBe(expectedOutput);
+  });
+
+  it.each([
+    ["before more content", String.raw`"C:\work\quo\"ted\repo"`, String.raw`C:\work\quo"ted\repo`],
+    ["at token end with a separate closing quote", String.raw`"C:\work\name\""`, String.raw`C:\work\name"`]
+  ])("preserves an embedded literal double quote %s", async (_label, payload, expectedPath) => {
+    const cwd = resolve("fixture repository");
+    const result = await invoke(["--skill-arguments", payload], cwd);
+
+    expect(result.code).toBe(0);
+    expect(result.options.targetPath).toBe(resolve(cwd, expectedPath));
+  });
+
   it.each(["'unterminated", '"unterminated'])("rejects malformed Skill payload %j", async (payload) => {
     const result = await invoke(["--skill-arguments", payload]);
 

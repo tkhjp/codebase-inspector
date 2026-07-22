@@ -22,7 +22,11 @@ function tokenizeSkillArguments(payload) {
     } else if (character === "\\") {
       const next = payload[index + 1];
       const escapesDelimiter = next !== undefined && /\s/.test(next);
-      const escapesQuote = next === '"' || (!quote && next === "'");
+      const afterNext = payload[index + 2];
+      const terminalDoubleQuote = quote === '"'
+        && next === '"'
+        && (afterNext === undefined || /\s/.test(afterNext));
+      const escapesQuote = !terminalDoubleQuote && (next === '"' || (!quote && next === "'"));
       if (next === "\\" || escapesDelimiter || escapesQuote) {
         token += next;
         index += 1;

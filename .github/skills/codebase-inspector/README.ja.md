@@ -20,6 +20,8 @@ Copilot では次のコマンドを使います。
 
 通常は対象リポジトリ直下に `.code-understanding/` を作成します。`project-path` を省略すると現在のディレクトリを対象にします。Copilot は対象リポジトリのルートから Skill 内部の `--skill-arguments` transport を使って引数を渡します。
 
+引数の引用処理はコマンドを実行しません。二重引用符 token 末尾の `\"` は、バックスラッシュを保持して token を閉じます（例: `"C:\Program Files\repo\"`）。リテラルの二重引用符は、token の途中では `\"` を使います。token 末尾では `\""` を使い、最後の引用符で token を閉じます（例: `"C:\work\name\""`）。
+
 ## 出力
 
 常に次の 6 ファイルを生成します。
