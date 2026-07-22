@@ -1,0 +1,31 @@
+import { spawn } from "node:child_process";
+
+function defaultRunProcess(command, args, options) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { ...options, shell: false });
+    child.on("error", () => resolve(1));
+    child.on("exit", (code) => resolve(code ?? 1));
+  });
+}
+
+export async function ensureRuntime({
+  skillDir,
+  nodeVersion = process.versions.node,
+  platform = process.platform,
+  runProcess = defaultRunProcess
+}) {
+  const nodeMajor = Number.parseInt(nodeVersion.split(".")[0], 10);
+  if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
+    throw new Error(`Node.js 22 or newer is required; found ${nodeVersion}`);
+  }
+
+  const npm = platform === "win32" ? "npm.cmd" : "npm";
+  const valid = await runProcess(npm, ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" });
+  if (valid === 0) return;
+
+  const installed = await runProcess(npm, ["ci", "--omit=dev"], { cwd: skillDir, stdio: "inherit" });
+  if (installed !== 0) throw new Error("Skill dependency installation failed");
+
+  const verified = await runProcess(npm, ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" });
+  if (verified !== 0) throw new Error("Installed Skill dependency tree is invalid");
+}
