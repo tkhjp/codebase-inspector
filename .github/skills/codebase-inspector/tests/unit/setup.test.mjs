@@ -5,6 +5,36 @@ import { tmpdir } from "node:os";
 import { expect, test } from "vitest";
 import { ensureRuntime, processInvocation } from "../../scripts/setup.mjs";
 
+async function expectNpmInstallFallback({ markerContents, createNodeModules = true }) {
+  const skillDir = await mkdtemp(join(tmpdir(), "codebase-inspector-setup-fallback-"));
+  const calls = [];
+
+  try {
+    if (createNodeModules) await mkdir(join(skillDir, "node_modules"));
+    await writeFile(join(skillDir, "package-lock.json"), "{\"lockfileVersion\":3}\n");
+    if (markerContents !== undefined) {
+      await writeFile(join(skillDir, ".codebase-inspector-runtime.json"), markerContents);
+    }
+
+    await ensureRuntime({
+      skillDir,
+      nodeVersion: "22.0.0",
+      runProcess: async (...args) => {
+        calls.push(args);
+        return calls.length === 1 ? 1 : 0;
+      }
+    });
+
+    expect(calls).toEqual([
+      ["npm", ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" }],
+      ["npm", ["ci", "--omit=dev"], { cwd: skillDir, stdio: "inherit" }],
+      ["npm", ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" }]
+    ]);
+  } finally {
+    await rm(skillDir, { recursive: true, force: true });
+  }
+}
+
 test("runs npm.cmd through cmd.exe without enabling a general shell", () => {
   expect(processInvocation("npm.cmd", ["ci", "--omit=dev"], {
     platform: "win32",
@@ -75,4 +105,33 @@ test("falls back to npm validation when the bundled runtime marker is stale", as
   } finally {
     await rm(skillDir, { recursive: true, force: true });
   }
+});
+
+test("falls back to npm install when the bundled runtime marker is absent", async () => {
+  await expectNpmInstallFallback({});
+});
+
+test("falls back to npm install when the bundled runtime marker is invalid JSON", async () => {
+  await expectNpmInstallFallback({ markerContents: "not-json" });
+});
+
+test("falls back to npm install when the bundled runtime marker format is unsupported", async () => {
+  const packageLock = "{\"lockfileVersion\":3}\n";
+  await expectNpmInstallFallback({
+    markerContents: JSON.stringify({
+      formatVersion: 2,
+      packageLockSha256: createHash("sha256").update(packageLock).digest("hex")
+    })
+  });
+});
+
+test("falls back to npm install when a matching marker has no node_modules", async () => {
+  const packageLock = "{\"lockfileVersion\":3}\n";
+  await expectNpmInstallFallback({
+    createNodeModules: false,
+    markerContents: JSON.stringify({
+      formatVersion: 1,
+      packageLockSha256: createHash("sha256").update(packageLock).digest("hex")
+    })
+  });
 });

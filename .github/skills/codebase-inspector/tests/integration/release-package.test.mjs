@@ -7,14 +7,26 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import AdmZip from "adm-zip";
 import { expect, test } from "vitest";
-import { buildRelease } from "../../scripts/package-release.mjs";
+import * as releasePackage from "../../scripts/package-release.mjs";
 
 const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const excludedPathSegments = ["tests", ".code-understanding", ".superpowers", ".git"];
+const { buildRelease } = releasePackage;
 
 async function exists(path) {
   return access(path).then(() => true, () => false);
+}
+
+async function copyReleaseFixture(sourceRoot, repositoryRoot) {
+  await mkdir(sourceRoot, { recursive: true });
+  await Promise.all([
+    ...["SKILL.md", "README.ja.md", "THIRD_PARTY_LICENSES.json", "package-lock.json", "package.json"]
+      .map((name) => cp(join(skillDir, name), join(sourceRoot, name))),
+    ...["lib", "vendor", "scripts"].map((name) => cp(join(skillDir, name), join(sourceRoot, name), { recursive: true })),
+    writeFile(join(repositoryRoot, "LICENSE"), "isolated license\n"),
+    writeFile(join(repositoryRoot, "NOTICE"), "isolated notice\n")
+  ]);
 }
 
 test("release zip contains a standalone runtime and excludes development files", async () => {
@@ -134,9 +146,105 @@ test("bundled release includes staged production dependencies and runtime marker
 
     const zip = new AdmZip(archivePath, { noSort: true });
     const entries = zip.getEntries().map((entry) => entry.entryName);
+    const marker = JSON.parse(zip.readAsText(`${prefix}.codebase-inspector-runtime.json`));
     expect(entries).toContain(`${prefix}node_modules/example/package.json`);
     expect(entries).toContain(`${prefix}.codebase-inspector-runtime.json`);
     expect(entries.some((entry) => entry.startsWith(`${prefix}tests/`))).toBe(false);
+    expect(marker).toEqual({
+      formatVersion: 1,
+      packageLockSha256: createHash("sha256").update(await readFile(join(sourceRoot, "package-lock.json"))).digest("hex")
+    });
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("release orchestration stages clean dependencies and rebuilds both archives", async () => {
+  expect(releasePackage.buildReleaseArchives).toBeTypeOf("function");
+  if (!releasePackage.buildReleaseArchives) return;
+
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-orchestration-"));
+  const repositoryRoot = join(temporaryRoot, "repository");
+  const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
+  const stagingRoot = join(temporaryRoot, "staging");
+  const outputDirectory = join(temporaryRoot, "output");
+  const npmCalls = [];
+
+  try {
+    await copyReleaseFixture(sourceRoot, repositoryRoot);
+    await mkdir(join(sourceRoot, "node_modules/worktree-only"), { recursive: true });
+    await writeFile(join(sourceRoot, "node_modules/worktree-only/package.json"), "{\"name\":\"worktree-only\"}\n");
+    await mkdir(outputDirectory);
+
+    const outputPaths = await releasePackage.buildReleaseArchives({
+      sourceRoot,
+      repositoryRoot,
+      outputDirectory,
+      createStagingRoot: async () => {
+        await mkdir(stagingRoot);
+        return stagingRoot;
+      },
+      installDependencies: async (dependencyRoot, args) => {
+        npmCalls.push({ dependencyRoot, args });
+        expect(await readFile(join(dependencyRoot, "package.json"))).toEqual(await readFile(join(sourceRoot, "package.json")));
+        expect(await readFile(join(dependencyRoot, "package-lock.json"))).toEqual(await readFile(join(sourceRoot, "package-lock.json")));
+        await mkdir(join(dependencyRoot, "node_modules/example"), { recursive: true });
+        await writeFile(join(dependencyRoot, "node_modules/example/package.json"), "{\"name\":\"example\"}\n");
+      }
+    });
+
+    expect(npmCalls).toEqual([{
+      dependencyRoot: stagingRoot,
+      args: ["ci", "--omit=dev", "--ignore-scripts"]
+    }]);
+    expect(outputPaths).toEqual({
+      slimArchivePath: join(outputDirectory, "codebase-inspector-0.1.0.zip"),
+      bundledArchivePath: join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip")
+    });
+    const slimEntries = new AdmZip(outputPaths.slimArchivePath, { noSort: true })
+      .getEntries().map((entry) => entry.entryName);
+    const bundledEntries = new AdmZip(outputPaths.bundledArchivePath, { noSort: true })
+      .getEntries().map((entry) => entry.entryName);
+    const prefix = ".github/skills/codebase-inspector/node_modules/";
+    expect(slimEntries.some((entry) => entry.startsWith(prefix))).toBe(false);
+    expect(bundledEntries).toContain(`${prefix}example/package.json`);
+    expect(bundledEntries).not.toContain(`${prefix}worktree-only/package.json`);
+    expect(await exists(stagingRoot)).toBe(false);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("release orchestration rejects an oversized bundle and removes staging after failure", async () => {
+  expect(releasePackage.buildReleaseArchives).toBeTypeOf("function");
+  if (!releasePackage.buildReleaseArchives) return;
+
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-limit-"));
+  const repositoryRoot = join(temporaryRoot, "repository");
+  const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
+  const stagingRoot = join(temporaryRoot, "staging");
+  const outputDirectory = join(temporaryRoot, "output");
+
+  try {
+    await copyReleaseFixture(sourceRoot, repositoryRoot);
+    await mkdir(outputDirectory);
+
+    await expect(releasePackage.buildReleaseArchives({
+      sourceRoot,
+      repositoryRoot,
+      outputDirectory,
+      maximumBundledArchiveBytes: 1,
+      createStagingRoot: async () => {
+        await mkdir(stagingRoot);
+        return stagingRoot;
+      },
+      installDependencies: async (dependencyRoot) => {
+        await mkdir(join(dependencyRoot, "node_modules/example"), { recursive: true });
+        await writeFile(join(dependencyRoot, "node_modules/example/package.json"), "{\"name\":\"example\"}\n");
+      }
+    })).rejects.toThrow("Bundled release archive must be smaller than 1 bytes");
+    expect(await exists(stagingRoot)).toBe(false);
+    expect(await exists(join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip"))).toBe(false);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }

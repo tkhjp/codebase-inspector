@@ -13,7 +13,7 @@ const archiveName = "codebase-inspector-0.1.0.zip";
 const bundledArchiveName = "codebase-inspector-0.1.0-with-dependencies.zip";
 const fixedDosTimestamp = 0x00210000;
 const skillArchivePrefix = ".github/skills/codebase-inspector";
-const maximumBundledArchiveBytes = 100_000_000;
+const defaultMaximumBundledArchiveBytes = 100_000_000;
 
 async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -64,6 +64,7 @@ export async function buildRelease({
   sourceRoot = skillDir,
   repositoryRoot = repositoryDir,
   dependencyRoot,
+  maximumBundledArchiveBytes = defaultMaximumBundledArchiveBytes,
   outputPath = resolve(sourceRoot, archiveName)
 } = {}) {
   const relativeFiles = [
@@ -112,26 +113,41 @@ export async function buildRelease({
   return outputPath;
 }
 
-async function buildBundledRelease() {
-  const stagingRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-"));
-  const packageJsonPath = resolve(skillDir, "package.json");
-  const packageLockPath = resolve(skillDir, "package-lock.json");
+export async function buildReleaseArchives({
+  sourceRoot = skillDir,
+  repositoryRoot = repositoryDir,
+  outputDirectory = sourceRoot,
+  maximumBundledArchiveBytes = defaultMaximumBundledArchiveBytes,
+  createStagingRoot = () => mkdtemp(join(tmpdir(), "codebase-inspector-release-")),
+  installDependencies = runNpmCi
+} = {}) {
+  const stagingRoot = await createStagingRoot();
+  const packageJsonPath = resolve(sourceRoot, "package.json");
+  const packageLockPath = resolve(sourceRoot, "package-lock.json");
   const stagedPackageJsonPath = resolve(stagingRoot, "package.json");
   const stagedPackageLockPath = resolve(stagingRoot, "package-lock.json");
-  const bundledArchivePath = resolve(skillDir, bundledArchiveName);
+  const slimArchivePath = resolve(outputDirectory, archiveName);
+  const bundledArchivePath = resolve(outputDirectory, bundledArchiveName);
 
   try {
     await cp(packageJsonPath, stagedPackageJsonPath);
     await cp(packageLockPath, stagedPackageLockPath);
-    await runNpmCi(stagingRoot, ["ci", "--omit=dev", "--ignore-scripts"]);
-    await buildRelease({ dependencyRoot: stagingRoot, outputPath: bundledArchivePath });
-    return bundledArchivePath;
+    await installDependencies(stagingRoot, ["ci", "--omit=dev", "--ignore-scripts"]);
+    await buildRelease({ sourceRoot, repositoryRoot, outputPath: slimArchivePath });
+    await buildRelease({
+      sourceRoot,
+      repositoryRoot,
+      dependencyRoot: stagingRoot,
+      maximumBundledArchiveBytes,
+      outputPath: bundledArchivePath
+    });
+    return { slimArchivePath, bundledArchivePath };
   } finally {
     await rm(stagingRoot, { recursive: true, force: true });
   }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const outputPath = await buildBundledRelease();
-  console.log(`Codebase Inspector release archive: ${outputPath}`);
+  const { slimArchivePath, bundledArchivePath } = await buildReleaseArchives();
+  console.log(`Codebase Inspector release archives: ${slimArchivePath}, ${bundledArchivePath}`);
 }
