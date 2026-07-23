@@ -8,6 +8,13 @@ export function isPathWithin(root, candidate, { allowRoot = true } = {}) {
     || (difference !== "" && !escapesThroughParent && !isAbsolute(difference));
 }
 
+export function rebasePathWithin(path, sourceRoot, destinationRoot) {
+  const candidate = resolve(path);
+  const source = resolve(sourceRoot);
+  if (!isPathWithin(source, candidate)) return candidate;
+  return resolve(destinationRoot, relative(source, candidate));
+}
+
 export async function nearestExistingPath(path, fsOps = fs) {
   let candidate = path;
   for (;;) {

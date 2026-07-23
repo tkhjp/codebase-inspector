@@ -7,7 +7,7 @@ import { renderStructureDocuments } from "./reports/render-structure-documents.m
 import { parseStructureRenderReport } from "./schema/structure-render-report.mjs";
 import { parseSymbolIndexV2 } from "./schema/symbol-index.mjs";
 import { getGitMetadata } from "./scanner/git-files.mjs";
-import { isPathWithin, resolveOutputBoundary } from "./runtime/path-boundary.mjs";
+import { isPathWithin, rebasePathWithin, resolveOutputBoundary } from "./runtime/path-boundary.mjs";
 
 function projectRelative(root, path) {
   return relative(root, path).replaceAll("\\", "/");
@@ -21,15 +21,18 @@ function fileMatchesFilters(file, filters) {
 }
 
 export async function runStructureRender(options) {
-  const git = await getGitMetadata(options.cwd ?? process.cwd());
+  const lexicalCwd = resolve(options.cwd ?? process.cwd());
+  const canonicalCwd = await realpath(lexicalCwd);
+  const git = await getGitMetadata(canonicalCwd);
   const snapshotPath = await realpath(resolve(options.snapshotPath));
-  const requestedOutputPath = resolve(options.outputPath);
-  if (dirname(options.definitionOutput) !== requestedOutputPath || dirname(options.diagramOutput) !== requestedOutputPath) {
+  const lexicalOutputPath = resolve(options.outputPath);
+  if (dirname(options.definitionOutput) !== lexicalOutputPath || dirname(options.diagramOutput) !== lexicalOutputPath) {
     throw new Error("Definition and diagram outputs must be direct children of the selected output directory");
   }
   if (basename(options.definitionOutput) === basename(options.diagramOutput)) {
     throw new Error("Definition and diagram outputs must use different filenames");
   }
+  const requestedOutputPath = rebasePathWithin(lexicalOutputPath, lexicalCwd, canonicalCwd);
   const boundary = await resolveOutputBoundary({
     targetRoot: git.root,
     outputPath: requestedOutputPath,
