@@ -14,6 +14,9 @@ describe("vendored Understand-Anything snapshot", () => {
     expect(manifest.extractors.map((entry) => entry.name).sort()).toEqual(expected);
     expect(manifest.extractors.every((entry) => /^[a-f0-9]{64}$/.test(entry.sourceSha256))).toBe(true);
     expect(manifest.extractors.every((entry) => /^[a-f0-9]{64}$/.test(entry.generatedSha256))).toBe(true);
+    expect(manifest.importMapResolvers).toEqual([expect.objectContaining({ languages: ["python", "rust"] })]);
+    expect(manifest.importMapResolvers.every((entry) => /^[a-f0-9]{64}$/.test(entry.sourceSha256))).toBe(true);
+    expect(manifest.importMapResolvers.every((entry) => /^[a-f0-9]{64}$/.test(entry.generatedSha256))).toBe(true);
     expect(manifest.localPatches).toEqual([]);
   });
 
@@ -23,7 +26,7 @@ describe("vendored Understand-Anything snapshot", () => {
     const skillRoot = new URL("../../", import.meta.url);
     const skillPrefix = ".github/skills/codebase-inspector/";
 
-    for (const entry of [manifest.base, ...manifest.extractors]) {
+    for (const entry of [manifest.base, ...manifest.extractors, ...manifest.importMapResolvers]) {
       const generatedUrl = new URL(entry.generatedPath.slice(skillPrefix.length), skillRoot);
       const generated = await readFile(generatedUrl);
       expect(generated.toString("utf8")).toContain(entry.sourcePath);

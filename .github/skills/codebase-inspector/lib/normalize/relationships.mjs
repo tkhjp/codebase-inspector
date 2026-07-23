@@ -53,7 +53,7 @@ function isDynamicCall(calleeText) {
   return calleeText.includes(".") || calleeText.includes("::") || calleeText.includes("->");
 }
 
-export function resolveRelationships(indexDraft, rawAnalyses) {
+export function resolveRelationships(indexDraft, rawAnalyses, resolvedImportsByPath = new Map()) {
   const filesByPath = new Map(indexDraft.files.map((file) => [file.path, file]));
   const typeById = new Map(indexDraft.types.map((type) => [type.id, type]));
   const callables = [...indexDraft.methods, ...indexDraft.functions];
@@ -81,27 +81,49 @@ export function resolveRelationships(indexDraft, rawAnalyses) {
     if (!sourceFile) continue;
 
     const importCandidates = [...analysis.importCandidates].sort(compareRecords(["lineNumber", "source", "kind"]));
-    for (const candidate of importCandidates) {
-      if (!isRelativeImport(candidate.source)) {
-        relationshipCounts.externalImports += 1;
-        continue;
+    const upstreamResolved = resolvedImportsByPath.get(analysis.filePath);
+    if (upstreamResolved) {
+      const resolvedCandidateKeys = new Set();
+      for (const resolved of upstreamResolved) {
+        const targetFile = filesByPath.get(resolved.targetPath);
+        if (!targetFile) continue;
+        imports.push({
+          sourceFileId: sourceFile.id,
+          targetFileId: targetFile.id,
+          source: resolved.source,
+          lineNumber: resolved.lineNumber
+        });
+        resolvedCandidateKeys.add(`${resolved.lineNumber}\0${resolved.source}`);
+        relationshipCounts.internalImports += 1;
       }
-
-      const trackedMatches = [...new Set(relativeImportCandidates(analysis.filePath, candidate.source))]
-        .map((path) => filesByPath.get(path))
-        .filter(Boolean);
-      if (trackedMatches.length !== 1) {
-        relationshipCounts.unresolvedImports += 1;
-        continue;
+      for (const candidate of importCandidates) {
+        if (!resolvedCandidateKeys.has(`${candidate.lineNumber}\0${candidate.source}`)) {
+          relationshipCounts.externalImports += 1;
+        }
       }
+    } else {
+      for (const candidate of importCandidates) {
+        if (!isRelativeImport(candidate.source)) {
+          relationshipCounts.externalImports += 1;
+          continue;
+        }
 
-      imports.push({
-        sourceFileId: sourceFile.id,
-        targetFileId: trackedMatches[0].id,
-        source: candidate.source,
-        lineNumber: candidate.lineNumber
-      });
-      relationshipCounts.internalImports += 1;
+        const trackedMatches = [...new Set(relativeImportCandidates(analysis.filePath, candidate.source))]
+          .map((path) => filesByPath.get(path))
+          .filter(Boolean);
+        if (trackedMatches.length !== 1) {
+          relationshipCounts.unresolvedImports += 1;
+          continue;
+        }
+
+        imports.push({
+          sourceFileId: sourceFile.id,
+          targetFileId: trackedMatches[0].id,
+          source: candidate.source,
+          lineNumber: candidate.lineNumber
+        });
+        relationshipCounts.internalImports += 1;
+      }
     }
 
     const rawCalls = analysis.callCandidates.map((candidate) => ({ ...candidate, filePath: analysis.filePath }));

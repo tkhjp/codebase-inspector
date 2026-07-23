@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { buildCodeGraph } from "./graph/build-code-graph.mjs";
+import { buildResolvedImportMap } from "./imports/build-import-map.mjs";
 import { buildSymbolIndex } from "./normalize/symbol-index.mjs";
 import { serializeArtifacts } from "./output/artifacts.mjs";
 import { publishArtifacts } from "./output/publish.mjs";
@@ -18,6 +19,7 @@ export async function runAnalysis(runConfig, dependencies = {}) {
   const scan = dependencies.scanProject ?? scanProject;
   const createRegistry = dependencies.createParserRegistry ?? createParserRegistry;
   const buildIndex = dependencies.buildSymbolIndex ?? buildSymbolIndex;
+  const buildImports = dependencies.buildResolvedImportMap ?? buildResolvedImportMap;
   const buildGraph = dependencies.buildCodeGraph ?? buildCodeGraph;
   const buildReport = dependencies.buildAnalysisReport ?? buildAnalysisReport;
   const renderMarkdown = dependencies.renderMarkdownIndexes ?? renderMarkdownIndexes;
@@ -32,6 +34,11 @@ export async function runAnalysis(runConfig, dependencies = {}) {
     let analysisError;
     try {
       const analyses = await Promise.all(scanResult.files.map((file) => registry.analyzeFile(file)));
+      const resolvedImportsByPath = await buildImports({
+        projectRoot: runConfig.targetRoot,
+        files: scanResult.files,
+        analyses
+      });
       const project = {
         ...runConfig,
         name: basename(runConfig.targetRoot),
@@ -43,7 +50,8 @@ export async function runAnalysis(runConfig, dependencies = {}) {
         project,
         scan: scanResult,
         analyses,
-        skillVersion: "0.1.0"
+        skillVersion: "0.1.0",
+        resolvedImportsByPath
       });
       const codeGraph = buildGraph(symbolIndex, { analyzedAt: runConfig.gitCommitTimestamp });
       const report = buildReport({

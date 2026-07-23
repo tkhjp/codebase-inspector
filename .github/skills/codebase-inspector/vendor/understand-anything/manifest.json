@@ -84,6 +84,18 @@
       "sourceSha256": "1c89405f3db6a1cf1f679144e886542405d3a7f8b99ba1d9593043888339457a"
     }
   ],
+  "importMapResolvers": [
+    {
+      "generatedPath": ".github/skills/codebase-inspector/vendor/understand-anything/import-map/python-rust-resolvers.mjs",
+      "generatedSha256": "62db66a36cfbecd90cb66b6b4ad90e936969494e0f24c3e64f1d19d387f69405",
+      "languages": [
+        "python",
+        "rust"
+      ],
+      "sourcePath": "understand-anything-plugin/skills/understand/extract-import-map.mjs",
+      "sourceSha256": "ec0dff3313ce192d7e90eabca5b905ad73c997ef5152c562a852af9c0268e526"
+    }
+  ],
   "localPatches": [],
   "upstream": {
     "commit": "54754a6f97051d1d76c8758353d8ea41afe502a6",

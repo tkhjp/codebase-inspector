@@ -57,7 +57,7 @@ function canonicalProject(project, skillVersion) {
   };
 }
 
-export function buildSymbolIndex({ project, scan, analyses, skillVersion }) {
+export function buildSymbolIndex({ project, scan, analyses, skillVersion, resolvedImportsByPath = new Map() }) {
   const analysisByPath = new Map();
   for (const analysis of analyses) {
     if (analysisByPath.has(analysis.filePath)) throw new Error(`Duplicate raw analysis for ${analysis.filePath}`);
@@ -151,7 +151,7 @@ export function buildSymbolIndex({ project, scan, analyses, skillVersion }) {
   methods.sort(compareSymbols);
   functions.sort(compareSymbols);
   const indexDraft = { files, types, methods, functions };
-  const relationships = resolveRelationships(indexDraft, analyses);
+  const relationships = resolveRelationships(indexDraft, analyses, resolvedImportsByPath);
   const warningFiles = scan.files.filter((file) => analysisByPath.get(file.path)?.warnings.length).length;
   const symbolIndex = parseSymbolIndex({
     schemaVersion: "1.0.0",

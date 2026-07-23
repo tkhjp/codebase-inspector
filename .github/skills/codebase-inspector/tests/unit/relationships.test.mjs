@@ -53,6 +53,34 @@ test("resolves only unique tracked relative imports through the bounded candidat
   });
 });
 
+test("uses the upstream-resolved import map for non-relative language imports", () => {
+  const indexDraft = draft({ files: [
+    file("app/main.py"),
+    file("app/services/__init__.py"),
+    file("app/services/worker.py")
+  ] });
+  const analyses = [raw("app/main.py", { imports: [
+    { source: "app.services", specifiers: ["worker"], lineNumber: 1, kind: "module" },
+    { source: "requests", specifiers: [], lineNumber: 2, kind: "module" }
+  ] })];
+  const resolvedImports = new Map([["app/main.py", [
+    { targetPath: "app/services/__init__.py", source: "app.services", lineNumber: 1 },
+    { targetPath: "app/services/worker.py", source: "app.services", lineNumber: 1 }
+  ]]]);
+
+  const result = resolveRelationships(indexDraft, analyses, resolvedImports);
+
+  expect(result.imports).toEqual([
+    { sourceFileId: "file:app/main.py", targetFileId: "file:app/services/__init__.py", source: "app.services", lineNumber: 1 },
+    { sourceFileId: "file:app/main.py", targetFileId: "file:app/services/worker.py", source: "app.services", lineNumber: 1 }
+  ]);
+  expect(result.relationshipCounts).toMatchObject({
+    internalImports: 2,
+    externalImports: 1,
+    unresolvedImports: 0
+  });
+});
+
 test("resolves calls only for a unique same-file caller and unique project-wide callable name", () => {
   const indexDraft = draft({
     files: [file("src/a.ts"), file("src/b.ts")],
