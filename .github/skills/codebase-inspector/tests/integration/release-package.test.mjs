@@ -11,7 +11,7 @@ import { buildRelease } from "../../scripts/package-release.mjs";
 
 const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const excluded = ["node_modules/", "tests/", ".code-understanding/", ".superpowers/", ".git/"];
+const excludedPathSegments = ["tests", ".code-understanding", ".superpowers", ".git"];
 
 async function exists(path) {
   return access(path).then(() => true, () => false);
@@ -91,8 +91,13 @@ test("release zip contains a standalone runtime and excludes development files",
       `${prefix}vendor/understand-anything/manifest.json`,
       `${prefix}vendor/understand-anything/extractors/typescript-extractor.mjs`
     ]));
-    expect(entries.some((entry) => excluded.some((prefix) => entry.startsWith(prefix))
-      || entry.split("/").some((segment) => segment.endsWith(".tmp") || segment.endsWith(".bak")))).toBe(false);
+    expect(entries.some((entry) => {
+      const relativeEntry = entry.slice(prefix.length);
+      return relativeEntry === entry
+        || relativeEntry.startsWith("node_modules/")
+        || excludedPathSegments.some((segment) => relativeEntry === segment || relativeEntry.startsWith(`${segment}/`))
+        || relativeEntry.split("/").some((segment) => segment.endsWith(".tmp") || segment.endsWith(".bak"));
+    })).toBe(false);
     expect(zip.readAsText(`${prefix}LICENSE`)).toBe("isolated license\n");
     expect(zip.readAsText(`${prefix}NOTICE`)).toBe("isolated notice\n");
 
@@ -100,6 +105,38 @@ test("release zip contains a standalone runtime and excludes development files",
     const defaultZip = new AdmZip(defaultArchivePath, { noSort: true });
     expect(defaultZip.readAsText(`${prefix}LICENSE`)).toBe(await readFile(resolve(skillDir, "../../../LICENSE"), "utf8"));
     expect(defaultZip.readAsText(`${prefix}NOTICE`)).toBe(await readFile(resolve(skillDir, "../../../NOTICE"), "utf8"));
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("bundled release includes staged production dependencies and runtime marker", async () => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-bundled-release-"));
+  const repositoryRoot = join(temporaryRoot, "repository");
+  const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
+  const dependencyRoot = join(temporaryRoot, "dependencies");
+  const archivePath = join(temporaryRoot, "bundled.zip");
+  const prefix = ".github/skills/codebase-inspector/";
+
+  try {
+    await mkdir(sourceRoot, { recursive: true });
+    await Promise.all([
+      ...["SKILL.md", "README.ja.md", "THIRD_PARTY_LICENSES.json", "package-lock.json", "package.json"]
+        .map((name) => cp(join(skillDir, name), join(sourceRoot, name))),
+      ...["lib", "vendor", "scripts"].map((name) => cp(join(skillDir, name), join(sourceRoot, name), { recursive: true })),
+      writeFile(join(repositoryRoot, "LICENSE"), "isolated license\n"),
+      writeFile(join(repositoryRoot, "NOTICE"), "isolated notice\n"),
+      mkdir(join(dependencyRoot, "node_modules/example"), { recursive: true })
+    ]);
+    await writeFile(join(dependencyRoot, "node_modules/example/package.json"), "{\"name\":\"example\"}\n");
+
+    await buildRelease({ sourceRoot, repositoryRoot, dependencyRoot, outputPath: archivePath });
+
+    const zip = new AdmZip(archivePath, { noSort: true });
+    const entries = zip.getEntries().map((entry) => entry.entryName);
+    expect(entries).toContain(`${prefix}node_modules/example/package.json`);
+    expect(entries).toContain(`${prefix}.codebase-inspector-runtime.json`);
+    expect(entries.some((entry) => entry.startsWith(`${prefix}tests/`))).toBe(false);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
