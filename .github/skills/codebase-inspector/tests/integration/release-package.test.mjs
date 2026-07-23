@@ -32,15 +32,26 @@ async function copyReleaseFixture(sourceRoot, repositoryRoot) {
   ]);
 }
 
-async function verifierFixture() {
-  verifierFixturePromise ??= (async () => {
-    const root = await mkdtemp(join(tmpdir(), "codebase-inspector-release-verifier-fixture-"));
+async function createVerifierFixture({
+  temporaryDirectory = tmpdir(),
+  buildSlimArchive = (outputPath) => buildRelease({ outputPath }),
+  buildBundledArchive = (outputPath) => buildRelease({ dependencyRoot: skillDir, outputPath })
+} = {}) {
+  const root = await mkdtemp(join(temporaryDirectory, "codebase-inspector-release-verifier-fixture-"));
+  try {
     const slimArchivePath = join(root, "codebase-inspector-0.1.0.zip");
     const bundledArchivePath = join(root, "codebase-inspector-0.1.0-with-dependencies.zip");
-    await buildRelease({ outputPath: slimArchivePath });
-    await buildRelease({ dependencyRoot: skillDir, outputPath: bundledArchivePath });
+    await buildSlimArchive(slimArchivePath);
+    await buildBundledArchive(bundledArchivePath);
     return { root, slimArchivePath, bundledArchivePath };
-  })();
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function verifierFixture() {
+  verifierFixturePromise ??= createVerifierFixture();
   return verifierFixturePromise;
 }
 
@@ -50,10 +61,21 @@ async function writeMutatedArchive(sourcePath, outputPath, mutate) {
   await writeFile(outputPath, archive.toBuffer());
 }
 
+async function writeArchiveWithRawEntryName(sourcePath, outputPath, rawEntryName) {
+  const archive = new AdmZip(sourcePath, { noSort: true });
+  const replacement = Buffer.from(rawEntryName, "utf8");
+  const suffixLength = replacement.length - Buffer.byteLength(skillArchivePrefix);
+  if (suffixLength <= 0) throw new Error("Raw test entry must be longer than the Skill prefix");
+  const placeholder = `${skillArchivePrefix}${"x".repeat(suffixLength)}`;
+  archive.addFile(placeholder, Buffer.from("must not extract\n"));
+  replacement.copy(archive.getEntry(placeholder).rawEntryName);
+  await writeFile(outputPath, archive.toBuffer());
+}
+
 afterAll(async () => {
   if (!verifierFixturePromise) return;
-  const { root } = await verifierFixturePromise;
-  await rm(root, { recursive: true, force: true });
+  const fixture = await verifierFixturePromise.catch(() => null);
+  if (fixture) await rm(fixture.root, { recursive: true, force: true });
 });
 
 test("release zip contains a standalone runtime and excludes development files", async () => {
@@ -113,6 +135,7 @@ test("release zip contains a standalone runtime and excludes development files",
     const prefix = ".github/skills/codebase-inspector/";
     expect(entries).toContain(`${prefix}SKILL.md`);
     expect(entries).toContain(`${prefix}scripts/run.mjs`);
+    expect(entries).toContain(`${prefix}scripts/verify-release-archives.mjs`);
     expect(entries).toContain(`${prefix}LICENSE`);
     expect(entries.every((entry) => entry.startsWith(prefix))).toBe(true);
     expect(entries).not.toContain("LICENSE");
@@ -176,6 +199,7 @@ test("bundled release includes staged production dependencies and runtime marker
     const marker = JSON.parse(zip.readAsText(`${prefix}.codebase-inspector-runtime.json`));
     expect(entries).toContain(`${prefix}node_modules/example/package.json`);
     expect(entries).toContain(`${prefix}.codebase-inspector-runtime.json`);
+    expect(entries).toContain(`${prefix}scripts/verify-release-archives.mjs`);
     expect(entries.some((entry) => entry.startsWith(`${prefix}tests/`))).toBe(false);
     expect(marker).toEqual({
       formatVersion: 1,
@@ -215,24 +239,70 @@ test("release verifier extracts repository archives and runs the bundled Skill w
   }
 }, 30_000);
 
-test("release verifier rejects a bundled archive missing required runtime files", async () => {
+test.each([
+  "SKILL.md",
+  "scripts/run.mjs"
+])("release verifier rejects a bundled archive missing required %s", async (missingPath) => {
   const { slimArchivePath, bundledArchivePath } = await verifierFixture();
   const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-missing-files-"));
   const invalidBundledArchivePath = join(temporaryRoot, "bundled-missing-runtime.zip");
 
   try {
     await writeMutatedArchive(bundledArchivePath, invalidBundledArchivePath, (archive) => {
-      archive.deleteFile(`${skillArchivePrefix}SKILL.md`);
-      archive.deleteFile(`${skillArchivePrefix}scripts/run.mjs`);
+      archive.deleteFile(`${skillArchivePrefix}${missingPath}`);
     });
     await expect(verifyReleaseArchives({
       slimArchivePath,
       bundledArchivePath: invalidBundledArchivePath
-    })).rejects.toThrow(/bundled.*SKILL\.md|SKILL\.md.*bundled/i);
+    })).rejects.toThrow(new RegExp(`bundled.*${missingPath.replace(".", "\\.")}`, "i"));
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 }, 30_000);
+
+test.each([
+  ["absolute POSIX", "/.github/skills/codebase-inspector/README.md"],
+  ["backslash", ".github/skills/codebase-inspector/scripts\\run.mjs"],
+  ["Windows drive", "C:/.github/skills/codebase-inspector/README.md"],
+  ["dot segment", ".github/skills/codebase-inspector/./README.md"],
+  ["dot-dot segment", ".github/skills/codebase-inspector/../../README.md"],
+  ["non-normalized POSIX", ".github/skills/codebase-inspector//README.md"]
+])("release verifier rejects a raw %s entry before creating an extraction repository", async (_case, rawEntryName) => {
+  const { slimArchivePath, bundledArchivePath } = await verifierFixture();
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-raw-entry-"));
+  const invalidSlimArchivePath = join(temporaryRoot, "slim-non-canonical.zip");
+  const unavailableTemporaryDirectory = join(temporaryRoot, "must-not-be-created");
+
+  try {
+    await writeArchiveWithRawEntryName(slimArchivePath, invalidSlimArchivePath, rawEntryName);
+    await expect(verifyReleaseArchives({
+      slimArchivePath: invalidSlimArchivePath,
+      bundledArchivePath,
+      temporaryDirectory: unavailableTemporaryDirectory
+    })).rejects.toThrow(/Slim archive entry .* is not a canonical POSIX path/);
+    expect(await exists(unavailableTemporaryDirectory)).toBe(false);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("release verifier fixture removes its root when archive construction rejects", async () => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-fixture-cleanup-"));
+  let fixtureRoot;
+
+  try {
+    await expect(createVerifierFixture({
+      temporaryDirectory: temporaryRoot,
+      buildSlimArchive: async (outputPath) => {
+        fixtureRoot = dirname(outputPath);
+        throw new Error("injected archive construction failure");
+      }
+    })).rejects.toThrow("injected archive construction failure");
+    expect(await exists(fixtureRoot)).toBe(false);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test.each([
   ["slim", "slimArchivePath"],

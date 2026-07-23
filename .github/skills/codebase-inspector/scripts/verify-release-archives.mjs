@@ -1,7 +1,7 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, resolve, win32 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import AdmZip from "adm-zip";
@@ -52,8 +52,21 @@ async function createTemporaryRepository(repositoryRoot) {
 function validatedArchive(archivePath, archiveLabel) {
   const archive = new AdmZip(archivePath, { noSort: true });
   for (const entry of archive.getEntries()) {
-    if (!entry.entryName.startsWith(`${archivePrefix}/`)) {
-      throw new Error(`${archiveLabel} archive entry ${entry.entryName} must start with ${archivePrefix}/`);
+    const rawEntryName = entry.rawEntryName.toString("utf8");
+    const segments = rawEntryName.split("/");
+    const isCanonical = Buffer.from(rawEntryName, "utf8").equals(entry.rawEntryName)
+      && !posix.isAbsolute(rawEntryName)
+      && !rawEntryName.includes("\\")
+      && win32.parse(rawEntryName).root === ""
+      && !segments.includes(".")
+      && !segments.includes("..")
+      && posix.normalize(rawEntryName) === rawEntryName
+      && entry.entryName === rawEntryName;
+    if (!isCanonical) {
+      throw new Error(`${archiveLabel} archive entry ${rawEntryName} is not a canonical POSIX path`);
+    }
+    if (!rawEntryName.startsWith(`${archivePrefix}/`)) {
+      throw new Error(`${archiveLabel} archive entry ${rawEntryName} must start with ${archivePrefix}/`);
     }
   }
   return archive;
