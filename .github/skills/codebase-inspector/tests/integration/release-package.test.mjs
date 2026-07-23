@@ -135,7 +135,6 @@ test("release zip contains a standalone runtime and excludes development files",
     const prefix = ".github/skills/codebase-inspector/";
     expect(entries).toContain(`${prefix}SKILL.md`);
     expect(entries).toContain(`${prefix}scripts/run.mjs`);
-    expect(entries).toContain(`${prefix}scripts/verify-release-archives.mjs`);
     expect(entries).toContain(`${prefix}LICENSE`);
     expect(entries.every((entry) => entry.startsWith(prefix))).toBe(true);
     expect(entries).not.toContain("LICENSE");
@@ -199,7 +198,6 @@ test("bundled release includes staged production dependencies and runtime marker
     const marker = JSON.parse(zip.readAsText(`${prefix}.codebase-inspector-runtime.json`));
     expect(entries).toContain(`${prefix}node_modules/example/package.json`);
     expect(entries).toContain(`${prefix}.codebase-inspector-runtime.json`);
-    expect(entries).toContain(`${prefix}scripts/verify-release-archives.mjs`);
     expect(entries.some((entry) => entry.startsWith(`${prefix}tests/`))).toBe(false);
     expect(marker).toEqual({
       formatVersion: 1,
@@ -209,6 +207,16 @@ test("bundled release includes staged production dependencies and runtime marker
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 });
+
+test("end-user slim and bundled archives exclude the repository release verifier", async () => {
+  const { slimArchivePath, bundledArchivePath } = await verifierFixture();
+  const verifierPath = `${skillArchivePrefix}scripts/verify-release-archives.mjs`;
+
+  for (const archivePath of [slimArchivePath, bundledArchivePath]) {
+    const entries = new AdmZip(archivePath, { noSort: true }).getEntries().map((entry) => entry.entryName);
+    expect(entries).not.toContain(verifierPath);
+  }
+}, 30_000);
 
 test("release verifier extracts repository archives and runs the bundled Skill without npm", async () => {
   const { slimArchivePath, bundledArchivePath } = await verifierFixture();

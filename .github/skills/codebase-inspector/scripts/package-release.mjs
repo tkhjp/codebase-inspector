@@ -79,8 +79,7 @@ export async function buildRelease({
     ...(await collectFiles(resolve(sourceRoot, "lib"))),
     ...(await collectFiles(resolve(sourceRoot, "vendor"))),
     resolve(sourceRoot, "scripts/run.mjs"),
-    resolve(sourceRoot, "scripts/setup.mjs"),
-    resolve(sourceRoot, "scripts/verify-release-archives.mjs")
+    resolve(sourceRoot, "scripts/setup.mjs")
   ];
   const dependencyFiles = dependencyRoot
     ? await collectFiles(resolve(dependencyRoot, "node_modules"))
