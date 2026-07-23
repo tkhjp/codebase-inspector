@@ -39,7 +39,9 @@ test("Skill and root documentation describe tracked scanning and output modes ac
     readFile(resolve(repositoryDir, "README.ja.md"), "utf8")
   ]);
 
-  expect(skillJapanese).toContain("両方のモードで Git が追跡しているファイルだけを解析します");
+  expect(skillJapanese).toContain("`analyze` は Git が追跡しているファイルだけを解析します");
+  expect(skillJapanese).toContain("`render` は指定した snapshot だけを読み");
+  expect(skillJapanese).toContain("ソースファイルの走査や `.git/info/exclude` の変更を行いません");
   expect(skillJapanese).toContain("`.git/info/exclude`");
   expect(skillJapanese).toContain("`--tracked` はこの所有ブロックを削除");
   expect(skillJapanese).toContain("version control");
@@ -47,13 +49,15 @@ test("Skill and root documentation describe tracked scanning and output modes ac
   expect(skillJapanese).not.toContain("Git 管理下でない読み取り可能なソースファイル");
   expect(skillJapanese).not.toContain("中間情報を保持します");
 
-  expect(rootEnglish).toContain("Both modes scan only Git-tracked files.");
-  expect(rootEnglish).toContain("Default mode adds only a Codebase Inspector-owned output block to `.git/info/exclude`.");
-  expect(rootEnglish).toContain("`--tracked` removes that owned block so the output can be version controlled.");
-  expect(rootEnglish).toContain("`--keep-intermediate` is accepted and reported but emits no extra file.");
+  expect(rootEnglish).toContain("`analyze` scans only Git-tracked files.");
+  expect(rootEnglish).toContain("Codebase Inspector-owned analysis-output block to `.git/info/exclude`");
+  expect(rootEnglish).toContain("`--tracked` leaves no owned block");
+  expect(rootEnglish).toContain("`--keep-intermediate` is recorded but emits no extra file.");
+  expect(rootEnglish).toContain("`render` reads only the saved snapshot");
 
-  expect(rootJapanese).toContain("両方のモードで Git が追跡しているファイルだけを解析します");
+  expect(rootJapanese).toContain("`analyze` は Git が追跡しているファイルだけを解析します");
+  expect(rootJapanese).toContain("`render` は保存済み snapshot だけを読み");
   expect(rootJapanese).toContain("`.git/info/exclude`");
-  expect(rootJapanese).toContain("`--tracked` は所有ブロックを削除");
-  expect(rootJapanese).toContain("`--keep-intermediate` は受け付けてレポートに記録しますが、追加ファイルは生成しません");
+  expect(rootJapanese).toContain("`--tracked` はそのブロックを残しません");
+  expect(rootJapanese).toContain("`--keep-intermediate` はレポートに記録しますが、追加ファイルは生成しません");
 });

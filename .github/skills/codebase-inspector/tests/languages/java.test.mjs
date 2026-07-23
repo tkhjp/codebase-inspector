@@ -23,7 +23,7 @@ test("keeps Java overload artifacts distinct and deterministic", async () => {
     project: { name: "fixture", root: null, gitCommitHash: "abc123", workingTreeDirty: false, languages: ["java"] },
     scan: { files: [file], unsupportedFiles: [], warnings: [], git: {} },
     analyses: [analysis],
-    skillVersion: "0.1.0"
+    skillVersion: "0.2.0"
   };
 
   const first = buildSymbolIndex(input).symbolIndex;
@@ -32,6 +32,9 @@ test("keeps Java overload artifacts distinct and deterministic", async () => {
   expect(analysis.functions).toEqual([]);
   expect(first.methods).toHaveLength(2);
   expect(new Set(first.methods.map((method) => method.id)).size).toBe(2);
-  expect(first.methods.map((method) => method.parameters)).toEqual([[], [{ name: "value", type: null }]]);
+  expect(first.methods.map((method) => method.parameters)).toEqual([
+    [],
+    [expect.objectContaining({ position: 0, name: "value", type: null, typeStatus: "unsupported" })]
+  ]);
   expect(second).toEqual(first);
 });

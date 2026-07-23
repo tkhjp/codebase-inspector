@@ -50,7 +50,7 @@ export async function runAnalysis(runConfig, dependencies = {}) {
         project,
         scan: scanResult,
         analyses,
-        skillVersion: "0.1.0",
+        skillVersion: "0.2.0",
         resolvedImportsByPath
       });
       const codeGraph = buildGraph(symbolIndex, { analyzedAt: runConfig.gitCommitTimestamp });

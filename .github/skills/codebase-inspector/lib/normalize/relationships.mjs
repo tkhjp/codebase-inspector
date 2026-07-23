@@ -53,6 +53,85 @@ function isDynamicCall(calleeText) {
   return calleeText.includes(".") || calleeText.includes("::") || calleeText.includes("->");
 }
 
+function simpleCalleeName(calleeText) {
+  return calleeText.split(/\.|::|->/).filter(Boolean).at(-1) ?? calleeText;
+}
+
+function importedTargetPaths(sourceFileId, imports, filesByPath) {
+  const pathByFileId = new Map([...filesByPath.values()].map((file) => [file.id, file.path]));
+  return new Set(imports
+    .filter((record) => record.sourceFileId === sourceFileId)
+    .map((record) => pathByFileId.get(record.targetFileId))
+    .filter(Boolean));
+}
+
+function narrowCallees({ candidates, caller, candidate, typeById, importedPaths, restrictedPaths }) {
+  let narrowed = candidates;
+  if (restrictedPaths) {
+    narrowed = narrowed.filter((callee) => restrictedPaths.has(callee.filePath));
+  } else if ("ownerTypeId" in caller) {
+    const sameOwner = narrowed.filter((callee) => "ownerTypeId" in callee && callee.ownerTypeId === caller.ownerTypeId);
+    if (sameOwner.length > 0) narrowed = sameOwner;
+  }
+  if (!restrictedPaths) {
+    const sameFile = narrowed.filter((callee) => callee.filePath === caller.filePath);
+    if (sameFile.length > 0) narrowed = sameFile;
+    else {
+      const imported = narrowed.filter((callee) => importedPaths.has(callee.filePath));
+      if (imported.length > 0) narrowed = imported;
+    }
+  }
+  if (candidate.argumentCount !== null && candidate.argumentCount !== undefined) {
+    const sameArity = narrowed.filter((callee) => callee.parameters.length === candidate.argumentCount);
+    if (sameArity.length > 0) narrowed = sameArity;
+  }
+  if (candidate.callerOwnerName) {
+    const ownerScoped = narrowed.filter((callee) => "ownerTypeId" in callee && ownerName(callee, typeById) === candidate.callerOwnerName);
+    if (ownerScoped.length > 0) narrowed = ownerScoped;
+  }
+  return narrowed;
+}
+
+function importedBindings(sourceFileId, analysis, imports, filesByPath) {
+  const pathByFileId = new Map([...filesByPath.values()].map((file) => [file.id, file.path]));
+  const bindings = new Map();
+  for (const candidate of analysis.importCandidates) {
+    const paths = new Set(imports
+      .filter((record) => (
+        record.sourceFileId === sourceFileId
+        && record.source === candidate.source
+        && record.lineNumber === candidate.lineNumber
+      ))
+      .map((record) => pathByFileId.get(record.targetFileId))
+      .filter(Boolean));
+    if (paths.size === 0) continue;
+    for (const specifier of candidate.specifiers) {
+      const namespace = specifier.match(/^\*\s+as\s+(.+)$/);
+      const aliased = specifier.match(/^(.+?)\s+as\s+(.+)$/);
+      const importedName = namespace ? "*" : (aliased?.[1] ?? specifier).trim();
+      const localName = (namespace?.[1] ?? aliased?.[2] ?? specifier).trim();
+      if (!localName) continue;
+      const entries = bindings.get(localName) ?? [];
+      entries.push({ importedName, namespace: Boolean(namespace), paths });
+      bindings.set(localName, entries);
+    }
+  }
+  return bindings;
+}
+
+function resolveImportedBinding(calleeText, bindings) {
+  const parts = calleeText.split(".");
+  const namespace = parts.length === 2 ? bindings.get(parts[0])?.filter((entry) => entry.namespace) ?? [] : [];
+  const direct = parts.length === 1 ? bindings.get(calleeText)?.filter((entry) => !entry.namespace) ?? [] : [];
+  const entries = namespace.length > 0 ? namespace : direct;
+  if (entries.length !== 1) return null;
+  return {
+    importedName: entries[0].namespace ? parts[1] : entries[0].importedName,
+    namespace: entries[0].namespace,
+    paths: entries[0].paths
+  };
+}
+
 export function resolveRelationships(indexDraft, rawAnalyses, resolvedImportsByPath = new Map()) {
   const filesByPath = new Map(indexDraft.files.map((file) => [file.path, file]));
   const typeById = new Map(indexDraft.types.map((type) => [type.id, type]));
@@ -72,7 +151,9 @@ export function resolveRelationships(indexDraft, rawAnalyses, resolvedImportsByP
     externalImports: 0,
     unresolvedImports: 0,
     resolvedCalls: 0,
-    unresolvedCalls: 0
+    unresolvedCalls: 0,
+    ambiguousCalls: 0,
+    dynamicCalls: 0
   };
 
   const analyses = [...rawAnalyses].sort(compareRecords(["filePath"]));
@@ -128,6 +209,7 @@ export function resolveRelationships(indexDraft, rawAnalyses, resolvedImportsByP
 
     const rawCalls = analysis.callCandidates.map((candidate) => ({ ...candidate, filePath: analysis.filePath }));
     rawCalls.sort(compareRecords(["lineNumber", "callerOwnerName", "callerName", "calleeText"]));
+    const bindings = importedBindings(sourceFile.id, analysis, imports, filesByPath);
     for (const candidate of rawCalls) {
       const caller = findCaller(candidate, callables, typeById);
       if (!caller) {
@@ -136,40 +218,58 @@ export function resolveRelationships(indexDraft, rawAnalyses, resolvedImportsByP
           calleeText: candidate.calleeText,
           filePath: candidate.filePath,
           lineNumber: candidate.lineNumber,
-          reason: "caller-not-found"
+          reason: "caller-not-found",
+          candidateIds: []
         });
         relationshipCounts.unresolvedCalls += 1;
         continue;
       }
 
-      if (isDynamicCall(candidate.calleeText)) {
+      const binding = resolveImportedBinding(candidate.calleeText, bindings);
+      const name = binding?.importedName ?? simpleCalleeName(candidate.calleeText);
+      const sourceFile = filesByPath.get(candidate.filePath);
+      const importedPaths = importedTargetPaths(sourceFile.id, imports, filesByPath);
+      const candidates = narrowCallees({
+        candidates: callableByName.get(name) ?? [],
+        caller,
+        candidate,
+        typeById,
+        importedPaths,
+        restrictedPaths: binding?.paths ?? null
+      });
+
+      if (isDynamicCall(candidate.calleeText) && !binding?.namespace) {
         unresolvedCalls.push({
           callerId: caller.id,
           calleeText: candidate.calleeText,
           filePath: candidate.filePath,
           lineNumber: candidate.lineNumber,
-          reason: "dynamic-call"
+          reason: "dynamic-call",
+          candidateIds: candidates.map((callee) => callee.id).sort(compareText)
         });
         relationshipCounts.unresolvedCalls += 1;
+        relationshipCounts.dynamicCalls += 1;
         continue;
       }
 
-      const callees = callableByName.get(candidate.calleeText) ?? [];
-      if (callees.length !== 1) {
+      if (candidates.length !== 1) {
+        const reason = unresolvedReason(candidate.calleeText, candidates);
         unresolvedCalls.push({
           callerId: caller.id,
           calleeText: candidate.calleeText,
           filePath: candidate.filePath,
           lineNumber: candidate.lineNumber,
-          reason: unresolvedReason(candidate.calleeText, callees)
+          reason,
+          candidateIds: candidates.map((callee) => callee.id).sort(compareText)
         });
         relationshipCounts.unresolvedCalls += 1;
+        if (reason === "ambiguous-callee") relationshipCounts.ambiguousCalls += 1;
         continue;
       }
 
       calls.push({
         callerId: caller.id,
-        calleeId: callees[0].id,
+        calleeId: candidates[0].id,
         filePath: candidate.filePath,
         lineNumber: candidate.lineNumber
       });

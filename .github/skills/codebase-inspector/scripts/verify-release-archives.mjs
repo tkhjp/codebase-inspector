@@ -9,8 +9,9 @@ import AdmZip from "adm-zip";
 const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const archivePrefix = ".github/skills/codebase-inspector";
-const slimArchiveName = "codebase-inspector-0.1.0.zip";
-const bundledArchiveName = "codebase-inspector-0.1.0-with-dependencies.zip";
+const packageVersion = JSON.parse(await readFile(resolve(skillDir, "package.json"), "utf8")).version;
+const slimArchiveName = `codebase-inspector-${packageVersion}.zip`;
+const bundledArchiveName = `codebase-inspector-${packageVersion}-with-dependencies.zip`;
 const artifactNames = Object.freeze([
   "analysis-report.json",
   "classes.md",
@@ -18,6 +19,11 @@ const artifactNames = Object.freeze([
   "functions.md",
   "methods.md",
   "symbol-index.json"
+]);
+const renderArtifactNames = Object.freeze([
+  "structure-render-report.json",
+  "クラス図.md",
+  "クラス定義書.md"
 ]);
 const offlineGuardEnvironment = Object.freeze({
   ALL_PROXY: "http://127.0.0.1:9",
@@ -105,6 +111,7 @@ async function assertBundledMarkerBypassesNpm(extractedSkillDir) {
 
 async function assertExactArtifacts(repositoryRoot, extractedSkillDir) {
   const outputPath = join(repositoryRoot, ".code-understanding");
+  const renderOutputPath = join(repositoryRoot, ".structure-docs");
   const runScript = await realpath(join(extractedSkillDir, "scripts/run.mjs"));
   await runCommand(process.execPath, [runScript, "--tracked"], {
     cwd: repositoryRoot,
@@ -118,6 +125,24 @@ async function assertExactArtifacts(repositoryRoot, extractedSkillDir) {
   const nonFiles = entries.filter((entry) => !entry.isFile()).map((entry) => entry.name).sort();
   if (nonFiles.length > 0) {
     throw new Error(`Bundled Skill output artifacts must be regular files: ${nonFiles.join(", ")}`);
+  }
+  await runCommand(process.execPath, [
+    runScript,
+    "render",
+    "--snapshot", ".code-understanding/symbol-index.json",
+    "--output", ".structure-docs"
+  ], {
+    cwd: repositoryRoot,
+    env: { ...process.env, ...offlineGuardEnvironment }
+  });
+  const renderEntries = await readdir(renderOutputPath, { withFileTypes: true });
+  const renderNames = renderEntries.map((entry) => entry.name).sort();
+  if (JSON.stringify(renderNames) !== JSON.stringify(renderArtifactNames)) {
+    throw new Error(`Bundled Skill produced unexpected render artifacts: ${renderNames.join(", ")}`);
+  }
+  const nonRenderFiles = renderEntries.filter((entry) => !entry.isFile()).map((entry) => entry.name).sort();
+  if (nonRenderFiles.length > 0) {
+    throw new Error(`Bundled Skill render artifacts must be regular files: ${nonRenderFiles.join(", ")}`);
   }
 }
 

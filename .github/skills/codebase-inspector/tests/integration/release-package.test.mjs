@@ -39,8 +39,8 @@ async function createVerifierFixture({
 } = {}) {
   const root = await mkdtemp(join(temporaryDirectory, "codebase-inspector-release-verifier-fixture-"));
   try {
-    const slimArchivePath = join(root, "codebase-inspector-0.1.0.zip");
-    const bundledArchivePath = join(root, "codebase-inspector-0.1.0-with-dependencies.zip");
+    const slimArchivePath = join(root, "codebase-inspector-0.2.0.zip");
+    const bundledArchivePath = join(root, "codebase-inspector-0.2.0-with-dependencies.zip");
     await buildSlimArchive(slimArchivePath);
     await buildBundledArchive(bundledArchivePath);
     return { root, slimArchivePath, bundledArchivePath };
@@ -405,8 +405,8 @@ test("release orchestration stages clean dependencies and rebuilds both archives
       args: ["ci", "--omit=dev", "--ignore-scripts"]
     }]);
     expect(outputPaths).toEqual({
-      slimArchivePath: join(outputDirectory, "codebase-inspector-0.1.0.zip"),
-      bundledArchivePath: join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip")
+      slimArchivePath: join(outputDirectory, "codebase-inspector-0.2.0.zip"),
+      bundledArchivePath: join(outputDirectory, "codebase-inspector-0.2.0-with-dependencies.zip")
     });
     const slimEntries = new AdmZip(outputPaths.slimArchivePath, { noSort: true })
       .getEntries().map((entry) => entry.entryName);
@@ -431,8 +431,8 @@ test("release orchestration rejects an oversized bundle and removes staging afte
   const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
   const stagingRoot = join(temporaryRoot, "staging");
   const outputDirectory = join(temporaryRoot, "output");
-  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.1.0.zip");
-  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip");
+  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.2.0.zip");
+  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.2.0-with-dependencies.zip");
   const originalSlim = Buffer.from("original slim archive\n");
   const originalBundled = Buffer.from("original bundled archive\n");
 
@@ -459,8 +459,8 @@ test("release orchestration rejects an oversized bundle and removes staging afte
     expect(await readFile(slimArchivePath)).toEqual(originalSlim);
     expect(await readFile(bundledArchivePath)).toEqual(originalBundled);
     expect((await readdir(outputDirectory)).sort()).toEqual([
-      "codebase-inspector-0.1.0-with-dependencies.zip",
-      "codebase-inspector-0.1.0.zip"
+      "codebase-inspector-0.2.0-with-dependencies.zip",
+      "codebase-inspector-0.2.0.zip"
     ]);
     expect(await exists(stagingRoot)).toBe(false);
   } finally {
@@ -474,8 +474,8 @@ test("release orchestration rolls back both archives when pair publication fails
   const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
   const stagingRoot = join(temporaryRoot, "staging");
   const outputDirectory = join(temporaryRoot, "output");
-  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.1.0.zip");
-  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip");
+  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.2.0.zip");
+  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.2.0-with-dependencies.zip");
   const originalSlim = Buffer.from("original slim archive\n");
   const originalBundled = Buffer.from("original bundled archive\n");
   let moveCount = 0;
@@ -507,8 +507,8 @@ test("release orchestration rolls back both archives when pair publication fails
     expect(await readFile(slimArchivePath)).toEqual(originalSlim);
     expect(await readFile(bundledArchivePath)).toEqual(originalBundled);
     expect((await readdir(outputDirectory)).sort()).toEqual([
-      "codebase-inspector-0.1.0-with-dependencies.zip",
-      "codebase-inspector-0.1.0.zip"
+      "codebase-inspector-0.2.0-with-dependencies.zip",
+      "codebase-inspector-0.2.0.zip"
     ]);
     expect(await exists(stagingRoot)).toBe(false);
   } finally {

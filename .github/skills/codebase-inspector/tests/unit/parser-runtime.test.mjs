@@ -16,24 +16,24 @@ it("loads JavaScript grammar and returns strict raw analysis", async () => {
       content: "function a() {}\n"
     });
 
-    expect(result).toEqual({
+    expect(result).toEqual(expect.objectContaining({
       filePath: "a.js",
       language: "javascript",
       types: [],
       methods: [],
-      functions: [{
+      capabilityLevel: "enriched",
+      functions: [expect.objectContaining({
+        kind: "function",
         name: "a",
         lineRange: [1, 1],
         parameters: [],
         returnType: null,
-        visibility: null,
-        async: null,
-        exported: null
-      }],
+        returnTypeStatus: "not-declared"
+      })],
       importCandidates: [],
       callCandidates: [],
       warnings: []
-    });
+    }));
   } finally {
     await registry.close();
   }

@@ -27,7 +27,9 @@ The following vendored files were mechanically converted from the pinned source.
 | `understand-anything-plugin/packages/core/src/plugins/extractors/rust-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/rust-extractor.mjs` |
 | `understand-anything-plugin/packages/core/src/plugins/extractors/typescript-extractor.ts` | `.github/skills/codebase-inspector/vendor/understand-anything/extractors/typescript-extractor.mjs` |
 
-No local patches are applied in version `0.1.0`.
+No local patches are applied to the generated vendored files in versions `0.1.0` or `0.2.0`.
+Version `0.2.0` adds repository-owned adapters, AST enrichment, schema v2 normalization,
+and snapshot-driven document rendering outside the vendored snapshot.
 
 The pinned Understand-Anything source is MIT licensed:
 

@@ -32,9 +32,22 @@ function table(title, header, alignment, rows) {
 
 export function renderMarkdownIndexes(symbolIndex) {
   const typeById = new Map(symbolIndex.types.map((type) => [type.id, type]));
+  const propertiesByOwner = new Map();
+  for (const property of symbolIndex.properties ?? []) {
+    const values = propertiesByOwner.get(property.ownerTypeId) ?? [];
+    values.push(property);
+    propertiesByOwner.set(property.ownerTypeId, values);
+  }
   const classes = [...symbolIndex.types]
     .sort((left, right) => compareSymbols(left, right))
-    .map((type) => [cell(type.name), cell(type.kind), cell(type.filePath), lineRange(type.lineRange), String(type.methodIds.length), String(type.properties.length)]);
+    .map((type) => [
+      cell(type.name),
+      cell(type.kind),
+      cell(type.filePath),
+      lineRange(type.lineRange),
+      String(type.methodIds.length),
+      String(type.properties?.length ?? propertiesByOwner.get(type.id)?.length ?? 0)
+    ]);
   const methods = [...symbolIndex.methods]
     .sort((left, right) => compareSymbols(left, right, (method) => typeById.get(method.ownerTypeId)?.name ?? ""))
     .map((method) => [cell(typeById.get(method.ownerTypeId)?.name ?? null), cell(method.name), cell(method.filePath), lineRange(method.lineRange), parameters(method.parameters), cell(method.returnType)]);

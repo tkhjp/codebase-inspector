@@ -9,8 +9,9 @@ import { processInvocation } from "./setup.mjs";
 
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryDir = resolve(skillDir, "../../..");
-const archiveName = "codebase-inspector-0.1.0.zip";
-const bundledArchiveName = "codebase-inspector-0.1.0-with-dependencies.zip";
+const packageVersion = JSON.parse(await readFile(resolve(skillDir, "package.json"), "utf8")).version;
+const archiveName = `codebase-inspector-${packageVersion}.zip`;
+const bundledArchiveName = `codebase-inspector-${packageVersion}-with-dependencies.zip`;
 const fixedDosTimestamp = 0x00210000;
 const skillArchivePrefix = ".github/skills/codebase-inspector";
 const defaultMaximumBundledArchiveBytes = 100_000_000;

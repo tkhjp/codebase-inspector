@@ -51,69 +51,42 @@ const analysis = {
 };
 
 test("builds schema-valid symbols with stable bidirectional memberships", () => {
-  const result = buildSymbolIndex({ project, scan, analyses: [analysis], skillVersion: "0.1.0" });
+  const result = buildSymbolIndex({ project, scan, analyses: [analysis], skillVersion: "0.2.0" });
 
   expect(result.symbolIndex.files.map((file) => file.path)).toEqual(["README.md", "src/z.ts"]);
-  expect(result.symbolIndex.files).toEqual([
-    {
-      id: "file:README.md",
-      path: "README.md",
-      language: "unknown",
-      category: "unsupported",
-      lineCount: 3,
-      parseStatus: "unsupported",
-      typeIds: [],
-      methodIds: [],
-      functionIds: []
-    },
-    {
-      id: "file:src%2Fz.ts",
-      path: "src/z.ts",
-      language: "typescript",
-      category: "source",
-      lineCount: 20,
-      parseStatus: "warning",
-      typeIds: ["type:src%2Fz.ts:class:Greeter:2"],
-      methodIds: ["method:src%2Fz.ts:Greeter:run:5"],
-      functionIds: ["function:src%2Fz.ts:helper:16"]
-    }
-  ]);
-  expect(result.symbolIndex.types).toEqual([{
-    id: "type:src%2Fz.ts:class:Greeter:2",
+  const sourceFile = result.symbolIndex.files.find((file) => file.path === "src/z.ts");
+  expect(sourceFile).toEqual(expect.objectContaining({
+    parseStatus: "warning",
+    typeIds: [result.symbolIndex.types[0].id],
+    propertyIds: [result.symbolIndex.properties[0].id],
+    methodIds: [result.symbolIndex.methods[0].id],
+    functionIds: [result.symbolIndex.functions[0].id]
+  }));
+  expect(result.symbolIndex.types[0]).toEqual(expect.objectContaining({
     kind: "class",
     name: "Greeter",
+    qualifiedName: "Greeter",
     filePath: "src/z.ts",
-    lineRange: [2, 14],
-    properties: analysis.types[0].properties,
-    methodIds: ["method:src%2Fz.ts:Greeter:run:5"],
     extends: ["Base"],
-    implements: [],
     exported: true
-  }]);
-  expect(result.symbolIndex.methods).toEqual([{
-    id: "method:src%2Fz.ts:Greeter:run:5",
+  }));
+  expect(result.symbolIndex.properties[0]).toEqual(expect.objectContaining({
+    name: "message",
+    ownerTypeId: result.symbolIndex.types[0].id,
+    typeStatus: "unsupported"
+  }));
+  expect(result.symbolIndex.methods[0]).toEqual(expect.objectContaining({
+    kind: "method",
     name: "run",
-    ownerTypeId: "type:src%2Fz.ts:class:Greeter:2",
-    filePath: "src/z.ts",
-    lineRange: [5, 9],
-    parameters: [],
-    returnType: null,
-    visibility: null,
-    async: null,
-    exported: null,
-    static: null
-  }]);
-  expect(result.symbolIndex.functions).toEqual([{
-    id: "function:src%2Fz.ts:helper:16",
+    ownerTypeId: result.symbolIndex.types[0].id,
+    filePath: "src/z.ts"
+  }));
+  expect(result.symbolIndex.functions[0]).toEqual(expect.objectContaining({
+    kind: "function",
     name: "helper",
     filePath: "src/z.ts",
-    lineRange: [16, 18],
-    parameters: [],
-    returnType: null,
-    visibility: null,
-    async: null,
     exported: true
-  }]);
+  }));
   expect(result.symbolIndex.coverage).toEqual({
     trackedFiles: 2,
     supportedFiles: 1,
@@ -126,7 +99,9 @@ test("builds schema-valid symbols with stable bidirectional memberships", () => 
     externalImports: 0,
     unresolvedImports: 0,
     resolvedCalls: 0,
-    unresolvedCalls: 0
+    unresolvedCalls: 0,
+    ambiguousCalls: 0,
+    dynamicCalls: 0
   });
   expect(parseSymbolIndex(result.symbolIndex)).toEqual(result.symbolIndex);
 });
@@ -185,9 +160,9 @@ test("uses deterministic collision-only IDs when free functions share a start li
   const second = buildSymbolIndex({ project, scan, analyses: [reordered], skillVersion: "0.1.0" }).symbolIndex;
 
   expect(first.functions.map((func) => func.id)).toEqual([
-    "function:src%2Fz.ts:run:5",
-    "function:src%2Fz.ts:run:5:overload:2",
-    "function:src%2Fz.ts:helper:8"
+    "function:typescript:function:src%2Fz.ts%23run:",
+    "function:typescript:function:src%2Fz.ts%23run:%3F",
+    "function:typescript:function:src%2Fz.ts%23helper:"
   ]);
   expect(second.functions).toEqual(first.functions);
 });

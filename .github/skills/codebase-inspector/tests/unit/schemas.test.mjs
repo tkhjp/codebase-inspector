@@ -61,9 +61,9 @@ function validAnalysisReport() {
   };
 }
 
-it("rejects source bodies and parameter defaults at the extractor boundary", () => {
+it("rejects source bodies and accepts explicitly modeled parameter defaults at the extractor boundary", () => {
   expect(() => parseRawFileAnalysis({ filePath: "a.ts", language: "typescript", types: [], methods: [], functions: [], importCandidates: [], callCandidates: [], warnings: [], sourceBody: "secret" })).toThrow();
-  expect(() => parseRawFileAnalysis({ filePath: "a.ts", language: "typescript", types: [], methods: [], functions: [{ name: "f", lineRange: [1, 1], parameters: [{ name: "x", type: null, defaultValue: "secret" }], returnType: null, visibility: null, async: null, exported: null }], importCandidates: [], callCandidates: [], warnings: [] })).toThrow();
+  expect(() => parseRawFileAnalysis({ filePath: "a.ts", language: "typescript", types: [], methods: [], functions: [{ name: "f", lineRange: [1, 1], parameters: [{ name: "x", type: null, defaultValue: "value", defaultStatus: "known" }], returnType: null, visibility: null, async: null, exported: null }], importCandidates: [], callCandidates: [], warnings: [] })).not.toThrow();
 });
 
 it("requires methods to reference an existing owner type", () => {
@@ -128,6 +128,17 @@ it.each([
 
 it("accepts a fully coherent SymbolIndex", () => {
   expect(parseSymbolIndex(validSymbolIndex())).toEqual(validSymbolIndex());
+});
+
+it.each(["/tmp/a.ts", "C:\\repo\\a.ts", "../a.ts", "src//a.ts", "src/./a.ts", "src/"])("rejects non-relative or non-normalized file paths: %s", (path) => {
+  const invalid = validSymbolIndex();
+  invalid.files[0].path = path;
+  invalid.types[0].filePath = path;
+  invalid.methods[0].filePath = path;
+  invalid.functions[0].filePath = path;
+  invalid.calls[0].filePath = path;
+  invalid.unresolvedCalls[0].filePath = path;
+  expect(() => parseSymbolIndex(invalid)).toThrow(/project-relative/);
 });
 
 it("rejects duplicate File paths", () => {
