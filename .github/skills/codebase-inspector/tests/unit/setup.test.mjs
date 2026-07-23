@@ -98,6 +98,7 @@ test("falls back to npm validation when the bundled runtime marker is stale", as
     await ensureRuntime({
       skillDir,
       nodeVersion: "22.0.0",
+      platform: "linux",
       runProcess: async (...args) => {
         calls.push(args);
         return 0;

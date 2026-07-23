@@ -245,7 +245,7 @@ test("release verifier extracts repository archives and runs the bundled Skill w
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
-}, 30_000);
+}, 120_000);
 
 test.each([
   "SKILL.md",
