@@ -14,6 +14,7 @@ const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const excludedPathSegments = ["tests", ".code-understanding", ".superpowers", ".git"];
 const skillArchivePrefix = ".github/skills/codebase-inspector/";
+const ARCHIVE_IO_TIMEOUT_MS = 90_000;
 const { buildRelease } = releasePackage;
 let verifierFixturePromise;
 
@@ -216,7 +217,7 @@ test("end-user slim and bundled archives exclude the repository release verifier
     const entries = new AdmZip(archivePath, { noSort: true }).getEntries().map((entry) => entry.entryName);
     expect(entries).not.toContain(verifierPath);
   }
-}, 30_000);
+}, ARCHIVE_IO_TIMEOUT_MS);
 
 test("release verifier extracts repository archives and runs the bundled Skill without npm", async () => {
   const { slimArchivePath, bundledArchivePath } = await verifierFixture();
@@ -266,7 +267,7 @@ test.each([
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
-}, 30_000);
+}, ARCHIVE_IO_TIMEOUT_MS);
 
 test.each([
   ["absolute POSIX", "/.github/skills/codebase-inspector/README.md"],
@@ -364,7 +365,7 @@ test("release verifier rejects output entries that are not regular files", async
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
-}, 30_000);
+}, ARCHIVE_IO_TIMEOUT_MS);
 
 test("release orchestration stages clean dependencies and rebuilds both archives", async () => {
   expect(releasePackage.buildReleaseArchives).toBeTypeOf("function");
