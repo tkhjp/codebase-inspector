@@ -49,20 +49,32 @@ async function createTemporaryRepository(repositoryRoot) {
   await runCommand("git", ["commit", "--quiet", "-m", "fixture"], { cwd: repositoryRoot });
 }
 
-async function assertArchivePlacement(repositoryRoot, { hasBundledDependencies }) {
+function validatedArchive(archivePath, archiveLabel) {
+  const archive = new AdmZip(archivePath, { noSort: true });
+  for (const entry of archive.getEntries()) {
+    if (!entry.entryName.startsWith(`${archivePrefix}/`)) {
+      throw new Error(`${archiveLabel} archive entry ${entry.entryName} must start with ${archivePrefix}/`);
+    }
+  }
+  return archive;
+}
+
+async function assertArchivePlacement(repositoryRoot, { archiveLabel, hasBundledDependencies }) {
   const extractedSkillDir = join(repositoryRoot, archivePrefix);
-  if (!await exists(join(extractedSkillDir, "SKILL.md"))) {
-    throw new Error("Release archive did not extract SKILL.md below the Skill directory");
+  for (const requiredPath of ["SKILL.md", "scripts/run.mjs"]) {
+    if (!await exists(join(extractedSkillDir, requiredPath))) {
+      throw new Error(`${archiveLabel} archive did not extract required ${requiredPath} below the Skill directory`);
+    }
   }
   if (await exists(join(repositoryRoot, "SKILL.md"))) {
-    throw new Error("Release archive extracted SKILL.md at the repository root");
+    throw new Error(`${archiveLabel} archive extracted SKILL.md at the repository root`);
   }
   if (await readFile(join(repositoryRoot, "outside-skill.txt"), "utf8") !== "must remain at repository root\n") {
-    throw new Error("Release archive modified a file outside the Skill directory");
+    throw new Error(`${archiveLabel} archive modified a file outside the Skill directory`);
   }
   const hasNodeModules = await exists(join(extractedSkillDir, "node_modules"));
   if (hasNodeModules !== hasBundledDependencies) {
-    throw new Error(`Release archive bundled dependencies mismatch: expected ${hasBundledDependencies}`);
+    throw new Error(`${archiveLabel} archive bundled dependencies mismatch: expected ${hasBundledDependencies}`);
   }
   return extractedSkillDir;
 }
@@ -85,9 +97,14 @@ async function assertExactArtifacts(repositoryRoot, extractedSkillDir) {
     cwd: repositoryRoot,
     env: { ...process.env, ...offlineGuardEnvironment }
   });
-  const names = (await readdir(outputPath)).sort();
+  const entries = await readdir(outputPath, { withFileTypes: true });
+  const names = entries.map((entry) => entry.name).sort();
   if (JSON.stringify(names) !== JSON.stringify(artifactNames)) {
     throw new Error(`Bundled Skill produced unexpected artifacts: ${names.join(", ")}`);
+  }
+  const nonFiles = entries.filter((entry) => !entry.isFile()).map((entry) => entry.name).sort();
+  if (nonFiles.length > 0) {
+    throw new Error(`Bundled Skill output artifacts must be regular files: ${nonFiles.join(", ")}`);
   }
 }
 
@@ -96,18 +113,28 @@ export async function verifyReleaseArchives({
   bundledArchivePath = join(skillDir, bundledArchiveName),
   temporaryDirectory = tmpdir()
 } = {}) {
+  const slimArchive = validatedArchive(slimArchivePath, "Slim");
+  const bundledArchive = validatedArchive(bundledArchivePath, "Bundled");
   const temporaryRoot = await mkdtemp(join(temporaryDirectory, "codebase-inspector-release-verify-"));
-  const repositoryRoot = join(temporaryRoot, "repository");
+  const slimRepositoryRoot = join(temporaryRoot, "slim-repository");
+  const bundledRepositoryRoot = join(temporaryRoot, "bundled-repository");
 
   try {
-    await createTemporaryRepository(repositoryRoot);
-    new AdmZip(slimArchivePath, { noSort: true }).extractAllTo(repositoryRoot, true);
-    await assertArchivePlacement(repositoryRoot, { hasBundledDependencies: false });
+    await createTemporaryRepository(slimRepositoryRoot);
+    slimArchive.extractAllTo(slimRepositoryRoot, true);
+    await assertArchivePlacement(slimRepositoryRoot, {
+      archiveLabel: "Slim",
+      hasBundledDependencies: false
+    });
 
-    new AdmZip(bundledArchivePath, { noSort: true }).extractAllTo(repositoryRoot, true);
-    const extractedSkillDir = await assertArchivePlacement(repositoryRoot, { hasBundledDependencies: true });
+    await createTemporaryRepository(bundledRepositoryRoot);
+    bundledArchive.extractAllTo(bundledRepositoryRoot, true);
+    const extractedSkillDir = await assertArchivePlacement(bundledRepositoryRoot, {
+      archiveLabel: "Bundled",
+      hasBundledDependencies: true
+    });
     await assertBundledMarkerBypassesNpm(extractedSkillDir);
-    await assertExactArtifacts(repositoryRoot, extractedSkillDir);
+    await assertExactArtifacts(bundledRepositoryRoot, extractedSkillDir);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }

@@ -6,13 +6,16 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import AdmZip from "adm-zip";
-import { expect, test } from "vitest";
+import { afterAll, expect, test } from "vitest";
 import * as releasePackage from "../../scripts/package-release.mjs";
+import { verifyReleaseArchives } from "../../scripts/verify-release-archives.mjs";
 
 const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const excludedPathSegments = ["tests", ".code-understanding", ".superpowers", ".git"];
+const skillArchivePrefix = ".github/skills/codebase-inspector/";
 const { buildRelease } = releasePackage;
+let verifierFixturePromise;
 
 async function exists(path) {
   return access(path).then(() => true, () => false);
@@ -28,6 +31,30 @@ async function copyReleaseFixture(sourceRoot, repositoryRoot) {
     writeFile(join(repositoryRoot, "NOTICE"), "isolated notice\n")
   ]);
 }
+
+async function verifierFixture() {
+  verifierFixturePromise ??= (async () => {
+    const root = await mkdtemp(join(tmpdir(), "codebase-inspector-release-verifier-fixture-"));
+    const slimArchivePath = join(root, "codebase-inspector-0.1.0.zip");
+    const bundledArchivePath = join(root, "codebase-inspector-0.1.0-with-dependencies.zip");
+    await buildRelease({ outputPath: slimArchivePath });
+    await buildRelease({ dependencyRoot: skillDir, outputPath: bundledArchivePath });
+    return { root, slimArchivePath, bundledArchivePath };
+  })();
+  return verifierFixturePromise;
+}
+
+async function writeMutatedArchive(sourcePath, outputPath, mutate) {
+  const archive = new AdmZip(sourcePath, { noSort: true });
+  mutate(archive);
+  await writeFile(outputPath, archive.toBuffer());
+}
+
+afterAll(async () => {
+  if (!verifierFixturePromise) return;
+  const { root } = await verifierFixturePromise;
+  await rm(root, { recursive: true, force: true });
+});
 
 test("release zip contains a standalone runtime and excludes development files", async () => {
   const releaseScript = join(skillDir, "scripts/package-release.mjs");
@@ -160,34 +187,102 @@ test("bundled release includes staged production dependencies and runtime marker
 });
 
 test("release verifier extracts repository archives and runs the bundled Skill without npm", async () => {
+  const { slimArchivePath, bundledArchivePath } = await verifierFixture();
   const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-verifier-"));
-  const slimArchivePath = join(temporaryRoot, "codebase-inspector-0.1.0.zip");
-  const bundledArchivePath = join(temporaryRoot, "codebase-inspector-0.1.0-with-dependencies.zip");
-  const extractionRoot = join(temporaryRoot, "extraction");
-  const extractedSkillDir = join(extractionRoot, ".github/skills/codebase-inspector");
-  const prefix = ".github/skills/codebase-inspector/";
+  const slimExtractionRoot = join(temporaryRoot, "slim-extraction");
+  const bundledExtractionRoot = join(temporaryRoot, "bundled-extraction");
+  const bundledSkillDir = join(bundledExtractionRoot, skillArchivePrefix);
 
   try {
-    await buildRelease({ outputPath: slimArchivePath });
-    await buildRelease({ dependencyRoot: skillDir, outputPath: bundledArchivePath });
+    new AdmZip(slimArchivePath, { noSort: true }).extractAllTo(slimExtractionRoot, true);
+    expect(await exists(join(slimExtractionRoot, `${skillArchivePrefix}SKILL.md`))).toBe(true);
+    expect(await exists(join(slimExtractionRoot, `${skillArchivePrefix}node_modules`))).toBe(false);
 
-    new AdmZip(slimArchivePath, { noSort: true }).extractAllTo(extractionRoot, true);
-    expect(await exists(join(extractionRoot, `${prefix}SKILL.md`))).toBe(true);
-    expect(await exists(join(extractionRoot, `${prefix}node_modules`))).toBe(false);
-
-    new AdmZip(bundledArchivePath, { noSort: true }).extractAllTo(extractionRoot, true);
-    expect(await exists(join(extractionRoot, `${prefix}node_modules`))).toBe(true);
-    const { ensureRuntime } = await import(pathToFileURL(join(extractedSkillDir, "scripts/setup.mjs")).href);
+    new AdmZip(bundledArchivePath, { noSort: true }).extractAllTo(bundledExtractionRoot, true);
+    expect(await exists(join(bundledExtractionRoot, `${skillArchivePrefix}SKILL.md`))).toBe(true);
+    expect(await exists(join(bundledExtractionRoot, `${skillArchivePrefix}node_modules`))).toBe(true);
+    const { ensureRuntime } = await import(pathToFileURL(join(bundledSkillDir, "scripts/setup.mjs")).href);
     await ensureRuntime({
-      skillDir: extractedSkillDir,
+      skillDir: bundledSkillDir,
       runProcess: async () => {
         throw new Error("Bundled runtime must not invoke npm");
       }
     });
 
-    const verifier = await import("../../scripts/verify-release-archives.mjs").catch(() => null);
-    expect(verifier?.verifyReleaseArchives).toBeTypeOf("function");
-    await verifier.verifyReleaseArchives({ slimArchivePath, bundledArchivePath });
+    await verifyReleaseArchives({ slimArchivePath, bundledArchivePath });
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("release verifier rejects a bundled archive missing required runtime files", async () => {
+  const { slimArchivePath, bundledArchivePath } = await verifierFixture();
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-missing-files-"));
+  const invalidBundledArchivePath = join(temporaryRoot, "bundled-missing-runtime.zip");
+
+  try {
+    await writeMutatedArchive(bundledArchivePath, invalidBundledArchivePath, (archive) => {
+      archive.deleteFile(`${skillArchivePrefix}SKILL.md`);
+      archive.deleteFile(`${skillArchivePrefix}scripts/run.mjs`);
+    });
+    await expect(verifyReleaseArchives({
+      slimArchivePath,
+      bundledArchivePath: invalidBundledArchivePath
+    })).rejects.toThrow(/bundled.*SKILL\.md|SKILL\.md.*bundled/i);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test.each([
+  ["slim", "slimArchivePath"],
+  ["bundled", "bundledArchivePath"]
+])("release verifier rejects an entry outside the Skill prefix in the %s archive", async (_name, archiveKey) => {
+  const fixture = await verifierFixture();
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-prefix-"));
+  const invalidArchivePath = join(temporaryRoot, `${archiveKey}.zip`);
+
+  try {
+    await writeMutatedArchive(fixture[archiveKey], invalidArchivePath, (archive) => {
+      archive.addFile("outside-skill.txt", Buffer.from("must not extract\n"));
+    });
+    await expect(verifyReleaseArchives({
+      slimArchivePath: archiveKey === "slimArchivePath" ? invalidArchivePath : fixture.slimArchivePath,
+      bundledArchivePath: archiveKey === "bundledArchivePath" ? invalidArchivePath : fixture.bundledArchivePath
+    })).rejects.toThrow(/outside-skill\.txt.*\.github\/skills\/codebase-inspector\//i);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("release verifier rejects output entries that are not regular files", async () => {
+  const { slimArchivePath, bundledArchivePath } = await verifierFixture();
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-artifact-types-"));
+  const invalidBundledArchivePath = join(temporaryRoot, "bundled-directory-artifacts.zip");
+  const artifactNames = [
+    "analysis-report.json",
+    "classes.md",
+    "code-graph.json",
+    "functions.md",
+    "methods.md",
+    "symbol-index.json"
+  ];
+  const directoryArtifactRunScript = [
+    'import { mkdir } from "node:fs/promises";',
+    'import { join } from "node:path";',
+    `const names = ${JSON.stringify(artifactNames)};`,
+    'for (const name of names) await mkdir(join(process.cwd(), ".code-understanding", name), { recursive: true });',
+    ""
+  ].join("\n");
+
+  try {
+    await writeMutatedArchive(bundledArchivePath, invalidBundledArchivePath, (archive) => {
+      archive.updateFile(`${skillArchivePrefix}scripts/run.mjs`, Buffer.from(directoryArtifactRunScript));
+    });
+    await expect(verifyReleaseArchives({
+      slimArchivePath,
+      bundledArchivePath: invalidBundledArchivePath
+    })).rejects.toThrow(/regular files/i);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
