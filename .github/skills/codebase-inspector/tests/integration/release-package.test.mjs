@@ -71,30 +71,35 @@ test("release zip contains a standalone runtime and excludes development files",
     expect(zipEntries.every((entry) => entry.header.made === 0x0314)).toBe(true);
     expect(zipEntries.every((entry) => entry.header.version === 20 && entry.header.flags === 0x0800 && entry.header.method === 8)).toBe(true);
     expect(zipEntries.every((entry) => entry.attr === 0x81a40000)).toBe(true);
+    const prefix = ".github/skills/codebase-inspector/";
+    expect(entries).toContain(`${prefix}SKILL.md`);
+    expect(entries).toContain(`${prefix}scripts/run.mjs`);
+    expect(entries).toContain(`${prefix}LICENSE`);
+    expect(entries.every((entry) => entry.startsWith(prefix))).toBe(true);
+    expect(entries).not.toContain("LICENSE");
     expect(entries).toEqual(expect.arrayContaining([
-      "SKILL.md",
-      "README.ja.md",
-      "LICENSE",
-      "NOTICE",
-      "package.json",
-      "package-lock.json",
-      "THIRD_PARTY_LICENSES.json",
-      "lib/orchestrator.mjs",
-      "scripts/run.mjs",
-      "vendor/tree-sitter-dart/tree-sitter-dart.wasm",
-      "vendor/tree-sitter-dart/LICENSE",
-      "vendor/understand-anything/manifest.json",
-      "vendor/understand-anything/extractors/typescript-extractor.mjs"
+      `${prefix}README.ja.md`,
+      `${prefix}LICENSE`,
+      `${prefix}NOTICE`,
+      `${prefix}package.json`,
+      `${prefix}package-lock.json`,
+      `${prefix}THIRD_PARTY_LICENSES.json`,
+      `${prefix}lib/orchestrator.mjs`,
+      `${prefix}scripts/run.mjs`,
+      `${prefix}vendor/tree-sitter-dart/tree-sitter-dart.wasm`,
+      `${prefix}vendor/tree-sitter-dart/LICENSE`,
+      `${prefix}vendor/understand-anything/manifest.json`,
+      `${prefix}vendor/understand-anything/extractors/typescript-extractor.mjs`
     ]));
     expect(entries.some((entry) => excluded.some((prefix) => entry.startsWith(prefix))
       || entry.split("/").some((segment) => segment.endsWith(".tmp") || segment.endsWith(".bak")))).toBe(false);
-    expect(zip.readAsText("LICENSE")).toBe("isolated license\n");
-    expect(zip.readAsText("NOTICE")).toBe("isolated notice\n");
+    expect(zip.readAsText(`${prefix}LICENSE`)).toBe("isolated license\n");
+    expect(zip.readAsText(`${prefix}NOTICE`)).toBe("isolated notice\n");
 
     await buildRelease({ outputPath: defaultArchivePath });
     const defaultZip = new AdmZip(defaultArchivePath, { noSort: true });
-    expect(defaultZip.readAsText("LICENSE")).toBe(await readFile(resolve(skillDir, "../../../LICENSE"), "utf8"));
-    expect(defaultZip.readAsText("NOTICE")).toBe(await readFile(resolve(skillDir, "../../../NOTICE"), "utf8"));
+    expect(defaultZip.readAsText(`${prefix}LICENSE`)).toBe(await readFile(resolve(skillDir, "../../../LICENSE"), "utf8"));
+    expect(defaultZip.readAsText(`${prefix}NOTICE`)).toBe(await readFile(resolve(skillDir, "../../../NOTICE"), "utf8"));
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }

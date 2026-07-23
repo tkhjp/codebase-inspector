@@ -7,6 +7,7 @@ const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryDir = resolve(skillDir, "../../..");
 const archiveName = "codebase-inspector-0.1.0.zip";
 const fixedDosTimestamp = 0x00210000;
+const skillArchivePrefix = ".github/skills/codebase-inspector";
 
 async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -23,6 +24,10 @@ async function collectFiles(directory) {
 
 function archivePath(path, sourceRoot) {
   return relative(sourceRoot, path).split(sep).join("/");
+}
+
+function skillArchivePath(relativePath) {
+  return `${skillArchivePrefix}/${relativePath}`;
 }
 
 export async function buildRelease({
@@ -45,9 +50,9 @@ export async function buildRelease({
     resolve(sourceRoot, "scripts/setup.mjs")
   ];
   const entries = [
-    ...files.map((path) => ({ path, name: archivePath(path, sourceRoot) })),
-    { path: resolve(repositoryRoot, "LICENSE"), name: "LICENSE" },
-    { path: resolve(repositoryRoot, "NOTICE"), name: "NOTICE" }
+    ...files.map((path) => ({ path, name: skillArchivePath(archivePath(path, sourceRoot)) })),
+    { path: resolve(repositoryRoot, "LICENSE"), name: skillArchivePath("LICENSE") },
+    { path: resolve(repositoryRoot, "NOTICE"), name: skillArchivePath("NOTICE") }
   ].sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
 
   const archive = new AdmZip({ noSort: true });
