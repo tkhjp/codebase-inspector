@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { expect, test } from "vitest";
 import { ensureRuntime, processInvocation } from "../../scripts/setup.mjs";
 
-async function expectNpmInstallFallback({ markerContents, createNodeModules = true }) {
+async function expectNpmInstallFallback({
+  markerContents,
+  createNodeModules = true,
+  platform = "linux",
+  expectedNpm = "npm"
+}) {
   const skillDir = await mkdtemp(join(tmpdir(), "codebase-inspector-setup-fallback-"));
   const calls = [];
 
@@ -19,6 +24,7 @@ async function expectNpmInstallFallback({ markerContents, createNodeModules = tr
     await ensureRuntime({
       skillDir,
       nodeVersion: "22.0.0",
+      platform,
       runProcess: async (...args) => {
         calls.push(args);
         return calls.length === 1 ? 1 : 0;
@@ -26,9 +32,9 @@ async function expectNpmInstallFallback({ markerContents, createNodeModules = tr
     });
 
     expect(calls).toEqual([
-      ["npm", ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" }],
-      ["npm", ["ci", "--omit=dev"], { cwd: skillDir, stdio: "inherit" }],
-      ["npm", ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" }]
+      [expectedNpm, ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" }],
+      [expectedNpm, ["ci", "--omit=dev"], { cwd: skillDir, stdio: "inherit" }],
+      [expectedNpm, ["ls", "--omit=dev", "--silent"], { cwd: skillDir, stdio: "ignore" }]
     ]);
   } finally {
     await rm(skillDir, { recursive: true, force: true });
@@ -109,6 +115,10 @@ test("falls back to npm validation when the bundled runtime marker is stale", as
 
 test("falls back to npm install when the bundled runtime marker is absent", async () => {
   await expectNpmInstallFallback({});
+});
+
+test("uses npm.cmd for fallback installation on Windows", async () => {
+  await expectNpmInstallFallback({ platform: "win32", expectedNpm: "npm.cmd" });
 });
 
 test("falls back to npm install when the bundled runtime marker is invalid JSON", async () => {
