@@ -1,8 +1,19 @@
 import { spawn } from "node:child_process";
 
+export function processInvocation(command, args, {
+  platform = process.platform,
+  commandShell = process.env.ComSpec ?? "cmd.exe"
+} = {}) {
+  if (platform === "win32" && command.toLowerCase().endsWith(".cmd")) {
+    return { command: commandShell, args: ["/d", "/s", "/c", command, ...args] };
+  }
+  return { command, args };
+}
+
 function defaultRunProcess(command, args, options) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { ...options, shell: false });
+    const invocation = processInvocation(command, args);
+    const child = spawn(invocation.command, invocation.args, { ...options, shell: false });
     child.on("error", () => resolve(1));
     child.on("exit", (code) => resolve(code ?? 1));
   });

@@ -1,6 +1,6 @@
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { createFixtureRepo } from "../helpers/fixture-repo.mjs";
 import { scanProject } from "../../lib/scanner/scan.mjs";
@@ -143,18 +143,19 @@ it("reports an injected outside-root symlink without reading it", async () => {
 
 it("rejects a tracked file reached through an injected external parent symlink", async () => {
   const root = await createFixtureRepo({ "src/a.ts": "tracked placeholder\n" });
+  const trackedSuffix = join("src", "a.ts");
   let read = false;
   const fsOps = {
     async lstat() {
       return { isSymbolicLink: () => false, isFile: () => true };
     },
     async realpath(path) {
-      if (path.endsWith(".codeinspectorignore")) {
+      if (basename(path) === ".codeinspectorignore") {
         const error = new Error("not found");
         error.code = "ENOENT";
         throw error;
       }
-      return path.endsWith("src/a.ts") ? join(dirname(root), "outside", "a.ts") : root;
+      return path.endsWith(trackedSuffix) ? join(dirname(root), "outside", "a.ts") : root;
     },
     async readFile() {
       read = true;
@@ -174,16 +175,17 @@ it("does not load ignore rules through an injected external symlink", async () =
     "src/a.ts": "export const safe = true;\n",
     ".codeinspectorignore": "src/\n"
   });
+  const trackedSuffix = join("src", "a.ts");
   const fsOps = {
     async lstat() {
       return { isSymbolicLink: () => false, isFile: () => true };
     },
     async realpath(path) {
-      if (path.endsWith(".codeinspectorignore")) return join(dirname(root), "external-ignore");
+      if (basename(path) === ".codeinspectorignore") return join(dirname(root), "external-ignore");
       return path;
     },
     async readFile(path) {
-      if (path.endsWith("src/a.ts")) return Buffer.from("export const safe = true;\n");
+      if (path.endsWith(trackedSuffix)) return Buffer.from("export const safe = true;\n");
       throw new Error("external ignore file must not be read");
     }
   };

@@ -44,7 +44,8 @@ test("a copied Skill installs production dependencies and produces all six artif
     recursive: true,
     filter: (source) => !source.includes(`${join(skillDir, "node_modules")}/`) && !source.endsWith("node_modules")
   });
-  await execFile("npm", ["ci", "--omit=dev"], { cwd: copiedSkill, encoding: "utf8" });
+  const { ensureRuntime } = await import(pathToFileURL(join(copiedSkill, "scripts/setup.mjs")).href);
+  await ensureRuntime({ skillDir: copiedSkill });
   await execFile(process.execPath, [
     ".github/skills/codebase-inspector/scripts/run.mjs",
     "--skill-arguments",
@@ -66,4 +67,4 @@ test("a copied Skill installs production dependencies and produces all six artif
   expect(artifacts["methods.md"]).toContain("| Example | run | src/example.ts |");
   expect(artifacts["functions.md"]).toContain("| Function | File | Lines | Parameters | Return |");
   expect(artifacts["functions.md"]).toContain("| helper | src/example.ts |");
-}, 15_000);
+}, 30_000);

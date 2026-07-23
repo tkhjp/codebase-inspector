@@ -66,7 +66,7 @@ test("analysis proves offline and no-exec guards while leaving every absolute se
     proofPath: paths.proof,
     processProbe: probePath
   });
-  const nodeOptions = `--require "${guardPath}"`;
+  const nodeOptions = `--require "${guardPath.split("\\").join("/")}"`;
   const result = await execFile(process.execPath, [resolve(skillDir, "scripts/run.mjs"), "--skill-arguments", ""], {
     cwd: root,
     encoding: "utf8",

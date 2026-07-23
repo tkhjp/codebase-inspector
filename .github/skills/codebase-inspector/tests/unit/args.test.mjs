@@ -29,8 +29,9 @@ async function invoke(argv, cwd = resolve("fixture repository")) {
 
 describe("parseArgs", () => {
   it("defaults to cwd, local mode, and .code-understanding", () => {
-    expect(parseArgs([], "/repo")).toEqual({
-      targetPath: "/repo",
+    const cwd = resolve("/repo");
+    expect(parseArgs([], cwd)).toEqual({
+      targetPath: cwd,
       tracked: false,
       output: ".code-understanding",
       keepIntermediate: false
@@ -174,8 +175,9 @@ describe("parseArgs", () => {
   });
 
   it("accepts target, tracked, output, and keep-intermediate", () => {
-    expect(parseArgs(["../app", "--tracked", "--output", ".analysis", "--keep-intermediate"], "/repo")).toEqual({
-      targetPath: "/app",
+    const cwd = resolve("/repo");
+    expect(parseArgs(["../app", "--tracked", "--output", ".analysis", "--keep-intermediate"], cwd)).toEqual({
+      targetPath: resolve(cwd, "../app"),
       tracked: true,
       output: ".analysis",
       keepIntermediate: true
