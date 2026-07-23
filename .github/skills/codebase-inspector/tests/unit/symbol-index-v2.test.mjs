@@ -242,3 +242,67 @@ test("keeps unscoped same-name types in different files distinct", () => {
   expect(index.types).toHaveLength(2);
   expect(new Set(index.types.map((type) => type.id)).size).toBe(2);
 });
+
+test("assigns deterministic unique IDs when Rust overload signatures are unavailable", () => {
+  const file = {
+    path: "src/error.rs",
+    language: "rust",
+    category: "source",
+    lineCount: 80,
+    bytes: 400,
+    content: "ignored"
+  };
+  const analysis = {
+    filePath: file.path,
+    language: file.language,
+    types: [{
+      kind: "enum",
+      name: "ApiError",
+      qualifiedName: "ApiError",
+      lineRange: [1, 20],
+      properties: [],
+      extends: [],
+      implements: [],
+      exported: true
+    }],
+    methods: [1, 2, 3, 4].map(() => ({
+      kind: "method",
+      name: "from",
+      ownerName: "ApiError",
+      lineRange: [1, 20],
+      parameters: [],
+      returnType: null,
+      visibility: null,
+      async: null,
+      exported: null,
+      static: null
+    })),
+    functions: [30, 40, 50, 60].map((line) => ({
+      kind: "function",
+      name: "from",
+      lineRange: [line, line + 2],
+      parameters: [{ name: "value", type: null }],
+      returnType: null,
+      visibility: null,
+      async: null,
+      exported: null
+    })),
+    importCandidates: [],
+    callCandidates: [],
+    warnings: []
+  };
+  const buildIndex = () => buildSymbolIndex({
+    project: { ...project, languages: ["rust"] },
+    scan: { files: [file], unsupportedFiles: [], warnings: [], git: {} },
+    analyses: [analysis],
+    skillVersion: "0.2.0"
+  }).symbolIndex;
+  const first = buildIndex();
+  const second = buildIndex();
+
+  expect(new Set(first.methods.map((method) => method.id)).size).toBe(4);
+  expect(new Set(first.functions.map((func) => func.id)).size).toBe(4);
+  expect(first.methods.map((method) => method.id)).toEqual(second.methods.map((method) => method.id));
+  expect(first.functions.map((func) => func.id)).toEqual(second.functions.map((func) => func.id));
+  expect(() => parseSymbolIndexV2(first)).not.toThrow();
+});

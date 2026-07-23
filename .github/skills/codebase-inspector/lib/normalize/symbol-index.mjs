@@ -158,18 +158,22 @@ function typeIdentity(raw, analysis) {
   };
 }
 
-function collisionFallback(baseId, seenIds, filePath, lineRange) {
+function collisionFallback(baseId, seenIds, filePath, lineRange, idForFallback) {
   if (!seenIds.has(baseId)) return null;
-  const fileFallback = filePath;
-  const fileId = stableId("collision", baseId, fileFallback);
-  if (!seenIds.has(fileId)) return fileFallback;
-  return `${filePath}:${lineRange[0]}-${lineRange[1]}`;
+  const locationFallback = `${filePath}:${lineRange[0]}-${lineRange[1]}`;
+  for (const fallback of [filePath, locationFallback]) {
+    if (!seenIds.has(idForFallback(fallback))) return fallback;
+  }
+  let ordinal = 2;
+  while (seenIds.has(idForFallback(`${locationFallback}:${ordinal}`))) ordinal += 1;
+  return `${locationFallback}:${ordinal}`;
 }
 
 function createProperty(raw, owner, filePath, seenIds) {
   const kind = raw.kind ?? "property";
   const baseId = stablePropertyId({ ownerTypeId: owner.id, kind, name: raw.name });
-  const fallback = collisionFallback(baseId, seenIds, filePath, raw.lineRange ?? owner.lineRange);
+  const idForFallback = (fallback) => stablePropertyId({ ownerTypeId: owner.id, kind, name: raw.name, fallback });
+  const fallback = collisionFallback(baseId, seenIds, filePath, raw.lineRange ?? owner.lineRange, idForFallback);
   const id = stablePropertyId({ ownerTypeId: owner.id, kind, name: raw.name, fallback });
   seenIds.add(id);
   const canonical = {
@@ -416,7 +420,14 @@ export function buildSymbolIndex({ project, scan, analyses, skillVersion, resolv
       const kind = raw.kind ?? "method";
       const parameters = raw.parameters.map(normalizedParameter);
       const baseId = stableMethodId({ ownerTypeId: selected.type.id, kind, name: raw.name, parameters });
-      const fallback = collisionFallback(baseId, seenMethodIds, analysis.filePath, raw.lineRange);
+      const idForFallback = (fallback) => stableMethodId({
+        ownerTypeId: selected.type.id,
+        kind,
+        name: raw.name,
+        parameters,
+        fallback
+      });
+      const fallback = collisionFallback(baseId, seenMethodIds, analysis.filePath, raw.lineRange, idForFallback);
       const id = stableMethodId({ ownerTypeId: selected.type.id, kind, name: raw.name, parameters, fallback });
       seenMethodIds.add(id);
       const method = {
@@ -440,7 +451,16 @@ export function buildSymbolIndex({ project, scan, analyses, skillVersion, resolv
         name: raw.name,
         parameters
       });
-      const fallback = collisionFallback(baseId, seenFunctionIds, analysis.filePath, raw.lineRange);
+      const idForFallback = (fallback) => stableFunctionId({
+        language: analysis.language,
+        filePath: analysis.filePath,
+        module: analysis.module ?? null,
+        kind,
+        name: raw.name,
+        parameters,
+        fallback
+      });
+      const fallback = collisionFallback(baseId, seenFunctionIds, analysis.filePath, raw.lineRange, idForFallback);
       const id = stableFunctionId({
         language: analysis.language,
         filePath: analysis.filePath,
