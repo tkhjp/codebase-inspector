@@ -63,9 +63,17 @@ function allowed(command, args = [], options = {}) {
     && options.env?.GIT_TERMINAL_PROMPT === "0"
     && options.env?.LC_ALL === "C") return true;
   const executable = path.basename(String(command)).toLowerCase();
-  return (executable === "npm" || executable === "npm.cmd")
-    && path.resolve(options.cwd ?? "") === path.resolve(config.skillDir)
-    && npmOperations.has(JSON.stringify(args));
+  const skillScoped = path.resolve(options.cwd ?? "") === path.resolve(config.skillDir);
+  if ((executable === "npm" || executable === "npm.cmd")
+    && skillScoped
+    && npmOperations.has(JSON.stringify(args))) return true;
+  return (executable === "cmd" || executable === "cmd.exe")
+    && skillScoped
+    && args[0] === "/d"
+    && args[1] === "/s"
+    && args[2] === "/c"
+    && String(args[3]).toLowerCase() === "npm.cmd"
+    && npmOperations.has(JSON.stringify(args.slice(4)));
 }
 
 function guarded(name) {

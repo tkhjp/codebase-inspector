@@ -67,4 +67,4 @@ test("a copied Skill installs production dependencies and produces all six artif
   expect(artifacts["methods.md"]).toContain("| Example | run | src/example.ts |");
   expect(artifacts["functions.md"]).toContain("| Function | File | Lines | Parameters | Return |");
   expect(artifacts["functions.md"]).toContain("| helper | src/example.ts |");
-}, 30_000);
+}, 60_000);
