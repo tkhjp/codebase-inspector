@@ -2,13 +2,20 @@
 
 `codebase-inspector` は、Git リポジトリ内の構文レベルの構造を決定的に抽出する GitHub Copilot Skill です。LLM を使わず、リポジトリのファイル、クラス、メソッド、関数、import、静的に確認できる call を索引化します。
 
+## インストール
+
+対象リポジトリのルートで、次の ZIP の**どちらか一方だけ**を展開してください。両方を同じ場所へ重ねて展開しないでください。どちらの ZIP も `.github/skills/codebase-inspector/` を作成します。
+
+- `codebase-inspector-0.1.0.zip`: 軽量版です。初回実行時に production dependencies を取得するため、npm registry への接続が必要です。
+- `codebase-inspector-0.1.0-with-dependencies.zip`: production dependencies を含むためサイズは大きくなりますが、依存関係をダウンロードせずに実行できます。
+
 ## 前提条件
 
 - Node.js 22 以降
 - Git
-- 最初の依存関係取得時だけ npm registry へ接続できること
+- 軽量版を初めて実行する場合だけ、npm registry へ接続できること
 
-`node_modules` は配布物に含まれません。Skill ディレクトリだけを対象リポジトリの `.github/skills/codebase-inspector/` にコピーしてください。初回実行時、Skill 自身のディレクトリで `npm ci --omit=dev` が実行されます。
+軽量版では、初回実行時に Skill 自身のディレクトリで `npm ci --omit=dev` が実行されます。
 
 ## 実行
 
