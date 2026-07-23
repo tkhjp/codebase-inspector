@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,15 +113,68 @@ export async function buildRelease({
   return outputPath;
 }
 
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function publishArchivePair(archives, movePublishedFile) {
+  const backedUp = [];
+  const published = [];
+
+  try {
+    for (const archive of archives) {
+      if (await exists(archive.finalPath)) {
+        await movePublishedFile(archive.finalPath, archive.backupPath);
+        backedUp.push(archive);
+      }
+    }
+    for (const archive of archives) {
+      await movePublishedFile(archive.temporaryPath, archive.finalPath);
+      published.push(archive);
+    }
+  } catch (publicationError) {
+    const rollbackErrors = [];
+    for (const archive of published.toReversed()) {
+      try {
+        await rm(archive.finalPath, { force: true });
+      } catch (error) {
+        rollbackErrors.push(error);
+      }
+    }
+    for (const archive of backedUp.toReversed()) {
+      try {
+        await movePublishedFile(archive.backupPath, archive.finalPath);
+      } catch (error) {
+        rollbackErrors.push(error);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [publicationError, ...rollbackErrors],
+        `Archive publication failed and rollback was incomplete: ${publicationError.message}`
+      );
+    }
+    throw publicationError;
+  }
+}
+
 export async function buildReleaseArchives({
   sourceRoot = skillDir,
   repositoryRoot = repositoryDir,
   outputDirectory = sourceRoot,
   maximumBundledArchiveBytes = defaultMaximumBundledArchiveBytes,
   createStagingRoot = () => mkdtemp(join(tmpdir(), "codebase-inspector-release-")),
-  installDependencies = runNpmCi
+  installDependencies = runNpmCi,
+  movePublishedFile = rename
 } = {}) {
   const stagingRoot = await createStagingRoot();
+  let publicationRoot;
   const packageJsonPath = resolve(sourceRoot, "package.json");
   const packageLockPath = resolve(sourceRoot, "package-lock.json");
   const stagedPackageJsonPath = resolve(stagingRoot, "package.json");
@@ -130,20 +183,38 @@ export async function buildReleaseArchives({
   const bundledArchivePath = resolve(outputDirectory, bundledArchiveName);
 
   try {
+    publicationRoot = await mkdtemp(join(outputDirectory, ".codebase-inspector-publish-"));
+    const temporarySlimArchivePath = resolve(publicationRoot, archiveName);
+    const temporaryBundledArchivePath = resolve(publicationRoot, bundledArchiveName);
     await cp(packageJsonPath, stagedPackageJsonPath);
     await cp(packageLockPath, stagedPackageLockPath);
     await installDependencies(stagingRoot, ["ci", "--omit=dev", "--ignore-scripts"]);
-    await buildRelease({ sourceRoot, repositoryRoot, outputPath: slimArchivePath });
+    await buildRelease({ sourceRoot, repositoryRoot, outputPath: temporarySlimArchivePath });
     await buildRelease({
       sourceRoot,
       repositoryRoot,
       dependencyRoot: stagingRoot,
       maximumBundledArchiveBytes,
-      outputPath: bundledArchivePath
+      outputPath: temporaryBundledArchivePath
     });
+    await publishArchivePair([
+      {
+        temporaryPath: temporarySlimArchivePath,
+        finalPath: slimArchivePath,
+        backupPath: resolve(publicationRoot, `${archiveName}.backup`)
+      },
+      {
+        temporaryPath: temporaryBundledArchivePath,
+        finalPath: bundledArchivePath,
+        backupPath: resolve(publicationRoot, `${bundledArchiveName}.backup`)
+      }
+    ], movePublishedFile);
     return { slimArchivePath, bundledArchivePath };
   } finally {
-    await rm(stagingRoot, { recursive: true, force: true });
+    await Promise.all([
+      rm(stagingRoot, { recursive: true, force: true }),
+      ...(publicationRoot ? [rm(publicationRoot, { recursive: true, force: true })] : [])
+    ]);
   }
 }
 

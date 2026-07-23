@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -224,10 +224,16 @@ test("release orchestration rejects an oversized bundle and removes staging afte
   const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
   const stagingRoot = join(temporaryRoot, "staging");
   const outputDirectory = join(temporaryRoot, "output");
+  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.1.0.zip");
+  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip");
+  const originalSlim = Buffer.from("original slim archive\n");
+  const originalBundled = Buffer.from("original bundled archive\n");
 
   try {
     await copyReleaseFixture(sourceRoot, repositoryRoot);
     await mkdir(outputDirectory);
+    await writeFile(slimArchivePath, originalSlim);
+    await writeFile(bundledArchivePath, originalBundled);
 
     await expect(releasePackage.buildReleaseArchives({
       sourceRoot,
@@ -243,8 +249,61 @@ test("release orchestration rejects an oversized bundle and removes staging afte
         await writeFile(join(dependencyRoot, "node_modules/example/package.json"), "{\"name\":\"example\"}\n");
       }
     })).rejects.toThrow("Bundled release archive must be smaller than 1 bytes");
+    expect(await readFile(slimArchivePath)).toEqual(originalSlim);
+    expect(await readFile(bundledArchivePath)).toEqual(originalBundled);
+    expect((await readdir(outputDirectory)).sort()).toEqual([
+      "codebase-inspector-0.1.0-with-dependencies.zip",
+      "codebase-inspector-0.1.0.zip"
+    ]);
     expect(await exists(stagingRoot)).toBe(false);
-    expect(await exists(join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip"))).toBe(false);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("release orchestration rolls back both archives when pair publication fails", async () => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-publish-failure-"));
+  const repositoryRoot = join(temporaryRoot, "repository");
+  const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
+  const stagingRoot = join(temporaryRoot, "staging");
+  const outputDirectory = join(temporaryRoot, "output");
+  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.1.0.zip");
+  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip");
+  const originalSlim = Buffer.from("original slim archive\n");
+  const originalBundled = Buffer.from("original bundled archive\n");
+  let moveCount = 0;
+
+  try {
+    await copyReleaseFixture(sourceRoot, repositoryRoot);
+    await mkdir(outputDirectory);
+    await writeFile(slimArchivePath, originalSlim);
+    await writeFile(bundledArchivePath, originalBundled);
+
+    await expect(releasePackage.buildReleaseArchives({
+      sourceRoot,
+      repositoryRoot,
+      outputDirectory,
+      createStagingRoot: async () => {
+        await mkdir(stagingRoot);
+        return stagingRoot;
+      },
+      installDependencies: async (dependencyRoot) => {
+        await mkdir(join(dependencyRoot, "node_modules/example"), { recursive: true });
+        await writeFile(join(dependencyRoot, "node_modules/example/package.json"), "{\"name\":\"example\"}\n");
+      },
+      movePublishedFile: async (source, destination) => {
+        moveCount += 1;
+        if (moveCount === 4) throw new Error("injected publication failure");
+        await rename(source, destination);
+      }
+    })).rejects.toThrow("injected publication failure");
+    expect(await readFile(slimArchivePath)).toEqual(originalSlim);
+    expect(await readFile(bundledArchivePath)).toEqual(originalBundled);
+    expect((await readdir(outputDirectory)).sort()).toEqual([
+      "codebase-inspector-0.1.0-with-dependencies.zip",
+      "codebase-inspector-0.1.0.zip"
+    ]);
+    expect(await exists(stagingRoot)).toBe(false);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
