@@ -1,9 +1,24 @@
+import { realpath } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeArgv, parseArgs } from "../lib/cli/args.mjs";
 import { parseRenderArgs } from "../lib/cli/render-args.mjs";
 
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+export async function isDirectExecution(argvPath, moduleUrl, realpathImpl = realpath) {
+  if (!argvPath) return false;
+  const modulePath = fileURLToPath(moduleUrl);
+  try {
+    const [canonicalArgvPath, canonicalModulePath] = await Promise.all([
+      realpathImpl(argvPath),
+      realpathImpl(modulePath)
+    ]);
+    return canonicalArgvPath === canonicalModulePath;
+  } catch {
+    return resolve(argvPath) === resolve(modulePath);
+  }
+}
 
 export async function main({
   argv = process.argv.slice(2),
@@ -50,6 +65,6 @@ export async function main({
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (await isDirectExecution(process.argv[1], import.meta.url)) {
   process.exitCode = await main();
 }
