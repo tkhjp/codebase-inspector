@@ -13,6 +13,7 @@
     "test:languages": "vitest run tests/languages",
     "test:integration": "vitest run tests/integration --no-file-parallelism",
     "release:zip": "node scripts/package-release.mjs",
+    "verify:release": "node scripts/verify-release-archives.mjs",
     "check:licenses": "node scripts/check-licenses.mjs"
   },
   "dependencies": {

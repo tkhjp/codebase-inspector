@@ -30,4 +30,9 @@ jobs:
       - run: npm audit
       - run: npm audit --omit=dev
       - run: npm run check:licenses
-      - run: npm run release:zip
+      - name: Verify committed downloadable release archives
+        run: npm run verify:release
+      - name: Regenerate release archives
+        run: npm run release:zip
+      - name: Verify regenerated release archives
+        run: npm run verify:release

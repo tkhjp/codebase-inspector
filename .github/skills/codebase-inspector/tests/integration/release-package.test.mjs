@@ -3,7 +3,7 @@ import { access, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } 
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import AdmZip from "adm-zip";
 import { expect, test } from "vitest";
@@ -158,6 +158,40 @@ test("bundled release includes staged production dependencies and runtime marker
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 });
+
+test("release verifier extracts repository archives and runs the bundled Skill without npm", async () => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "codebase-inspector-release-verifier-"));
+  const slimArchivePath = join(temporaryRoot, "codebase-inspector-0.1.0.zip");
+  const bundledArchivePath = join(temporaryRoot, "codebase-inspector-0.1.0-with-dependencies.zip");
+  const extractionRoot = join(temporaryRoot, "extraction");
+  const extractedSkillDir = join(extractionRoot, ".github/skills/codebase-inspector");
+  const prefix = ".github/skills/codebase-inspector/";
+
+  try {
+    await buildRelease({ outputPath: slimArchivePath });
+    await buildRelease({ dependencyRoot: skillDir, outputPath: bundledArchivePath });
+
+    new AdmZip(slimArchivePath, { noSort: true }).extractAllTo(extractionRoot, true);
+    expect(await exists(join(extractionRoot, `${prefix}SKILL.md`))).toBe(true);
+    expect(await exists(join(extractionRoot, `${prefix}node_modules`))).toBe(false);
+
+    new AdmZip(bundledArchivePath, { noSort: true }).extractAllTo(extractionRoot, true);
+    expect(await exists(join(extractionRoot, `${prefix}node_modules`))).toBe(true);
+    const { ensureRuntime } = await import(pathToFileURL(join(extractedSkillDir, "scripts/setup.mjs")).href);
+    await ensureRuntime({
+      skillDir: extractedSkillDir,
+      runProcess: async () => {
+        throw new Error("Bundled runtime must not invoke npm");
+      }
+    });
+
+    const verifier = await import("../../scripts/verify-release-archives.mjs").catch(() => null);
+    expect(verifier?.verifyReleaseArchives).toBeTypeOf("function");
+    await verifier.verifyReleaseArchives({ slimArchivePath, bundledArchivePath });
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}, 30_000);
 
 test("release orchestration stages clean dependencies and rebuilds both archives", async () => {
   expect(releasePackage.buildReleaseArchives).toBeTypeOf("function");
