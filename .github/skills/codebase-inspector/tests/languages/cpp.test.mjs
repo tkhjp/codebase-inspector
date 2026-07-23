@@ -24,7 +24,7 @@ test("keeps same-line C++ free-function overload artifacts distinct and determin
     project: { name: "fixture", root: null, gitCommitHash: "abc123", workingTreeDirty: false, languages: ["cpp"] },
     scan: { files: [file], unsupportedFiles: [], warnings: [], git: {} },
     analyses: [analysis],
-    skillVersion: "0.1.0"
+    skillVersion: "0.2.0"
   };
 
   const first = buildSymbolIndex(input).symbolIndex;
@@ -32,8 +32,8 @@ test("keeps same-line C++ free-function overload artifacts distinct and determin
 
   expect(first.functions).toHaveLength(2);
   expect(first.functions.map((func) => func.id)).toEqual([
-    "function:runner.cpp:run:1",
-    "function:runner.cpp:run:1:overload:2"
+    "function:cpp:function:runner.cpp%23run:",
+    "function:cpp:function:runner.cpp%23run:%3F"
   ]);
   expect(second).toEqual(first);
 });

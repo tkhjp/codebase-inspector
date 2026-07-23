@@ -24,23 +24,30 @@ describe("vendored TypeScript extraction", () => {
     expect(result.types).toEqual([expect.objectContaining({
       kind: "class",
       name: "A",
-      properties: [expect.objectContaining({ name: "value", type: null })],
+      properties: [expect.objectContaining({ name: "value", type: "string", typeStatus: "known" })],
       exported: true
     })]);
     expect(result.methods).toEqual([expect.objectContaining({
       name: "run",
       ownerName: "A",
-      parameters: [],
-      static: null
+      parameters: [expect.objectContaining({ name: "input", type: "string", position: 0 })],
+      returnType: "void",
+      static: false
     })]);
     expect(result.functions).toEqual([expect.objectContaining({
       name: "free",
-      parameters: [{ name: "a", type: null }],
+      parameters: [expect.objectContaining({ name: "a", type: "number", position: 0 })],
       returnType: "string",
       exported: true
     })]);
     expect(result.importCandidates).toEqual([{ source: "./x.js", specifiers: ["x"], lineNumber: 1, kind: "module" }]);
-    expect(result.callCandidates).toContainEqual({ callerName: "run", callerOwnerName: null, calleeText: "x", lineNumber: 1 });
-    expect(result.warnings).toEqual(["Upstream method A.run has no callable detail record"]);
+    expect(result.callCandidates).toContainEqual(expect.objectContaining({
+      callerName: "run",
+      callerOwnerName: "A",
+      calleeText: "x",
+      argumentCount: 0,
+      lineNumber: 1
+    }));
+    expect(result.capabilityLevel).toBe("enriched");
   });
 });

@@ -1,3 +1,9 @@
+import { enrichAnalysis } from "./ast-enricher.mjs";
+
+function compareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function toRawFunction(entry, exported) {
   return {
     name: entry.name,
@@ -63,7 +69,7 @@ function adaptCallables(structure, exported, language) {
       });
     }
   }
-  for (const [name, owners] of [...ambiguous].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [name, owners] of [...ambiguous].sort(([left], [right]) => compareText(left, right))) {
     warnings.push(`Upstream ownership is ambiguous for method ${name}: ${[...owners].sort().join(", ")}`);
   }
   const functions = structure.functions
@@ -90,7 +96,7 @@ export function createUpstreamAdapter(extractor) {
         exported: exported.has(entry.name) ? true : null
       }));
 
-      return {
+      const base = {
         filePath,
         language,
         types,
@@ -105,6 +111,7 @@ export function createUpstreamAdapter(extractor) {
         })),
         warnings: callables.warnings
       };
+      return enrichAnalysis(rootNode, { language, base });
     }
   };
 }

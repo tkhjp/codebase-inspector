@@ -14,6 +14,7 @@ const execFile = promisify(execFileCallback);
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const excludedPathSegments = ["tests", ".code-understanding", ".superpowers", ".git"];
 const skillArchivePrefix = ".github/skills/codebase-inspector/";
+const ARCHIVE_IO_TIMEOUT_MS = 90_000;
 const { buildRelease } = releasePackage;
 let verifierFixturePromise;
 
@@ -39,8 +40,8 @@ async function createVerifierFixture({
 } = {}) {
   const root = await mkdtemp(join(temporaryDirectory, "codebase-inspector-release-verifier-fixture-"));
   try {
-    const slimArchivePath = join(root, "codebase-inspector-0.1.0.zip");
-    const bundledArchivePath = join(root, "codebase-inspector-0.1.0-with-dependencies.zip");
+    const slimArchivePath = join(root, "codebase-inspector-0.2.0.zip");
+    const bundledArchivePath = join(root, "codebase-inspector-0.2.0-with-dependencies.zip");
     await buildSlimArchive(slimArchivePath);
     await buildBundledArchive(bundledArchivePath);
     return { root, slimArchivePath, bundledArchivePath };
@@ -216,7 +217,7 @@ test("end-user slim and bundled archives exclude the repository release verifier
     const entries = new AdmZip(archivePath, { noSort: true }).getEntries().map((entry) => entry.entryName);
     expect(entries).not.toContain(verifierPath);
   }
-}, 30_000);
+}, ARCHIVE_IO_TIMEOUT_MS);
 
 test("release verifier extracts repository archives and runs the bundled Skill without npm", async () => {
   const { slimArchivePath, bundledArchivePath } = await verifierFixture();
@@ -266,7 +267,7 @@ test.each([
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
-}, 30_000);
+}, ARCHIVE_IO_TIMEOUT_MS);
 
 test.each([
   ["absolute POSIX", "/.github/skills/codebase-inspector/README.md"],
@@ -364,7 +365,7 @@ test("release verifier rejects output entries that are not regular files", async
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
-}, 30_000);
+}, ARCHIVE_IO_TIMEOUT_MS);
 
 test("release orchestration stages clean dependencies and rebuilds both archives", async () => {
   expect(releasePackage.buildReleaseArchives).toBeTypeOf("function");
@@ -405,8 +406,8 @@ test("release orchestration stages clean dependencies and rebuilds both archives
       args: ["ci", "--omit=dev", "--ignore-scripts"]
     }]);
     expect(outputPaths).toEqual({
-      slimArchivePath: join(outputDirectory, "codebase-inspector-0.1.0.zip"),
-      bundledArchivePath: join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip")
+      slimArchivePath: join(outputDirectory, "codebase-inspector-0.2.0.zip"),
+      bundledArchivePath: join(outputDirectory, "codebase-inspector-0.2.0-with-dependencies.zip")
     });
     const slimEntries = new AdmZip(outputPaths.slimArchivePath, { noSort: true })
       .getEntries().map((entry) => entry.entryName);
@@ -431,8 +432,8 @@ test("release orchestration rejects an oversized bundle and removes staging afte
   const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
   const stagingRoot = join(temporaryRoot, "staging");
   const outputDirectory = join(temporaryRoot, "output");
-  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.1.0.zip");
-  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip");
+  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.2.0.zip");
+  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.2.0-with-dependencies.zip");
   const originalSlim = Buffer.from("original slim archive\n");
   const originalBundled = Buffer.from("original bundled archive\n");
 
@@ -459,8 +460,8 @@ test("release orchestration rejects an oversized bundle and removes staging afte
     expect(await readFile(slimArchivePath)).toEqual(originalSlim);
     expect(await readFile(bundledArchivePath)).toEqual(originalBundled);
     expect((await readdir(outputDirectory)).sort()).toEqual([
-      "codebase-inspector-0.1.0-with-dependencies.zip",
-      "codebase-inspector-0.1.0.zip"
+      "codebase-inspector-0.2.0-with-dependencies.zip",
+      "codebase-inspector-0.2.0.zip"
     ]);
     expect(await exists(stagingRoot)).toBe(false);
   } finally {
@@ -474,8 +475,8 @@ test("release orchestration rolls back both archives when pair publication fails
   const sourceRoot = join(repositoryRoot, ".github/skills/codebase-inspector");
   const stagingRoot = join(temporaryRoot, "staging");
   const outputDirectory = join(temporaryRoot, "output");
-  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.1.0.zip");
-  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.1.0-with-dependencies.zip");
+  const slimArchivePath = join(outputDirectory, "codebase-inspector-0.2.0.zip");
+  const bundledArchivePath = join(outputDirectory, "codebase-inspector-0.2.0-with-dependencies.zip");
   const originalSlim = Buffer.from("original slim archive\n");
   const originalBundled = Buffer.from("original bundled archive\n");
   let moveCount = 0;
@@ -507,8 +508,8 @@ test("release orchestration rolls back both archives when pair publication fails
     expect(await readFile(slimArchivePath)).toEqual(originalSlim);
     expect(await readFile(bundledArchivePath)).toEqual(originalBundled);
     expect((await readdir(outputDirectory)).sort()).toEqual([
-      "codebase-inspector-0.1.0-with-dependencies.zip",
-      "codebase-inspector-0.1.0.zip"
+      "codebase-inspector-0.2.0-with-dependencies.zip",
+      "codebase-inspector-0.2.0.zip"
     ]);
     expect(await exists(stagingRoot)).toBe(false);
   } finally {

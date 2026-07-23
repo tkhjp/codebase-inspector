@@ -48,7 +48,9 @@ test("resolves only unique tracked relative imports through the bounded candidat
       externalImports: 1,
       unresolvedImports: 2,
       resolvedCalls: 0,
-      unresolvedCalls: 0
+      unresolvedCalls: 0,
+      ambiguousCalls: 0,
+      dynamicCalls: 0
     }
   });
 });
@@ -114,22 +116,24 @@ test("resolves calls only for a unique same-file caller and unique project-wide 
     imports: [],
     calls: [
       { callerId: "function:a.caller", calleeId: "function:a.unique", filePath: "src/a.ts", lineNumber: 10 },
-      { callerId: "method:A.run", calleeId: "function:a.unique", filePath: "src/a.ts", lineNumber: 11 }
+      { callerId: "method:A.run", calleeId: "function:a.unique", filePath: "src/a.ts", lineNumber: 11 },
+      { callerId: "function:a.caller", calleeId: "function:a.duplicate", filePath: "src/a.ts", lineNumber: 15 }
     ],
     unresolvedCalls: [
-      { callerId: null, calleeText: "unique", filePath: "src/a.ts", lineNumber: 12, reason: "caller-not-found" },
-      { callerId: null, calleeText: "unique", filePath: "src/a.ts", lineNumber: 13, reason: "caller-not-found" },
-      { callerId: "function:a.caller", calleeText: "missing", filePath: "src/a.ts", lineNumber: 14, reason: "callee-not-found" },
-      { callerId: "function:a.caller", calleeText: "duplicate", filePath: "src/a.ts", lineNumber: 15, reason: "ambiguous-callee" },
-      { callerId: null, calleeText: "unique", filePath: "src/a.ts", lineNumber: 16, reason: "caller-not-found" },
-      { callerId: "function:a.caller", calleeText: "service.unique", filePath: "src/a.ts", lineNumber: 17, reason: "dynamic-call" }
+      { callerId: null, calleeText: "unique", filePath: "src/a.ts", lineNumber: 12, reason: "caller-not-found", candidateIds: [] },
+      { callerId: null, calleeText: "unique", filePath: "src/a.ts", lineNumber: 13, reason: "caller-not-found", candidateIds: [] },
+      { callerId: "function:a.caller", calleeText: "missing", filePath: "src/a.ts", lineNumber: 14, reason: "callee-not-found", candidateIds: [] },
+      { callerId: null, calleeText: "unique", filePath: "src/a.ts", lineNumber: 16, reason: "caller-not-found", candidateIds: [] },
+      { callerId: "function:a.caller", calleeText: "service.unique", filePath: "src/a.ts", lineNumber: 17, reason: "dynamic-call", candidateIds: ["function:a.unique"] }
     ],
     relationshipCounts: {
       internalImports: 0,
       externalImports: 0,
       unresolvedImports: 0,
-      resolvedCalls: 2,
-      unresolvedCalls: 6
+      resolvedCalls: 3,
+      unresolvedCalls: 5,
+      ambiguousCalls: 0,
+      dynamicCalls: 1
     }
   });
 });
@@ -165,8 +169,81 @@ test("classifies receiver and member calls as dynamic before exact-name lookup",
 
   expect(result.calls).toEqual([]);
   expect(result.unresolvedCalls).toEqual([
-    { callerId: "caller", calleeText: "service.run", filePath: "src/a.ts", lineNumber: 1, reason: "dynamic-call" },
-    { callerId: "caller", calleeText: "A::run", filePath: "src/a.ts", lineNumber: 2, reason: "dynamic-call" },
-    { callerId: "caller", calleeText: "ptr->run", filePath: "src/a.ts", lineNumber: 3, reason: "dynamic-call" }
+    { callerId: "caller", calleeText: "service.run", filePath: "src/a.ts", lineNumber: 1, reason: "dynamic-call", candidateIds: [] },
+    { callerId: "caller", calleeText: "A::run", filePath: "src/a.ts", lineNumber: 2, reason: "dynamic-call", candidateIds: [] },
+    { callerId: "caller", calleeText: "ptr->run", filePath: "src/a.ts", lineNumber: 3, reason: "dynamic-call", candidateIds: [] }
   ]);
+});
+
+test("preserves all candidates when owner, import scope, and arity cannot disambiguate a call", () => {
+  const caller = { ...func("caller", "caller", "src/a.ts"), parameters: [] };
+  const first = { ...func("first", "find", "src/a.ts"), parameters: [{ type: "string" }] };
+  const second = { ...func("second", "find", "src/a.ts"), parameters: [{ type: "number" }] };
+  const result = resolveRelationships(draft({
+    files: [file("src/a.ts")],
+    functions: [caller, first, second]
+  }), [raw("src/a.ts", { calls: [{
+    callerName: "caller",
+    callerOwnerName: null,
+    calleeText: "find",
+    argumentCount: 1,
+    lineNumber: 3
+  }] })]);
+
+  expect(result.calls).toEqual([]);
+  expect(result.unresolvedCalls).toEqual([{
+    callerId: "caller",
+    calleeText: "find",
+    filePath: "src/a.ts",
+    lineNumber: 3,
+    reason: "ambiguous-callee",
+    candidateIds: ["first", "second"]
+  }]);
+  expect(result.relationshipCounts).toEqual(expect.objectContaining({
+    resolvedCalls: 0,
+    unresolvedCalls: 1,
+    ambiguousCalls: 1
+  }));
+});
+
+test("resolves named and namespace import aliases only within their tracked target file", () => {
+  const indexDraft = draft({
+    files: [file("src/main.ts"), file("src/gateway.ts")],
+    functions: [
+      func("caller", "caller", "src/main.ts"),
+      func("local-load", "load", "src/main.ts"),
+      func("remote-fetch", "fetch", "src/gateway.ts")
+    ]
+  });
+  const analyses = [raw("src/main.ts", {
+    imports: [{
+      source: "./gateway",
+      specifiers: ["fetch as load", "* as gateway"],
+      lineNumber: 1,
+      kind: "module"
+    }],
+    calls: [
+      { callerName: "caller", callerOwnerName: null, calleeText: "load", lineNumber: 3 },
+      { callerName: "caller", callerOwnerName: null, calleeText: "gateway.fetch", lineNumber: 4 }
+    ]
+  })];
+  const resolvedImports = new Map([["src/main.ts", [{
+    targetPath: "src/gateway.ts",
+    source: "./gateway",
+    lineNumber: 1
+  }]]]);
+
+  const result = resolveRelationships(indexDraft, analyses, resolvedImports);
+
+  expect(result.calls).toEqual([
+    { callerId: "caller", calleeId: "remote-fetch", filePath: "src/main.ts", lineNumber: 3 },
+    { callerId: "caller", calleeId: "remote-fetch", filePath: "src/main.ts", lineNumber: 4 }
+  ]);
+  expect(result.unresolvedCalls).toEqual([]);
+  expect(result.relationshipCounts).toMatchObject({
+    internalImports: 1,
+    resolvedCalls: 2,
+    unresolvedCalls: 0,
+    dynamicCalls: 0
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "codebase-inspector-skill",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -39,6 +39,7 @@
     "adm-zip": "0.6.0",
     "esbuild": "0.28.1",
     "eslint": "9.39.2",
+    "mermaid": "11.16.0",
     "vitest": "3.2.7"
   }
 }
