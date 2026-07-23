@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { resolve } from "node:path";
 import { parseRenderArgs } from "../../lib/cli/render-args.mjs";
 
 test("parses deterministic structure render filters", () => {
@@ -15,8 +16,8 @@ test("parses deterministic structure render filters", () => {
     "--output", ".docs"
   ], "/repo");
 
-  expect(result.snapshotPath).toBe("/repo/.analysis/symbol-index.json");
-  expect(result.outputPath).toBe("/repo/.docs");
+  expect(result.snapshotPath).toBe(resolve("/repo/.analysis/symbol-index.json"));
+  expect(result.outputPath).toBe(resolve("/repo/.docs"));
   expect(result.filters).toEqual({
     path: "src/orders",
     language: "typescript",

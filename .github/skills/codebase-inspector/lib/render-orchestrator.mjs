@@ -22,7 +22,6 @@ function fileMatchesFilters(file, filters) {
 
 export async function runStructureRender(options) {
   const git = await getGitMetadata(options.cwd ?? process.cwd());
-  const targetRoot = await realpath(git.root);
   const snapshotPath = await realpath(resolve(options.snapshotPath));
   const requestedOutputPath = resolve(options.outputPath);
   if (dirname(options.definitionOutput) !== requestedOutputPath || dirname(options.diagramOutput) !== requestedOutputPath) {
@@ -32,11 +31,12 @@ export async function runStructureRender(options) {
     throw new Error("Definition and diagram outputs must use different filenames");
   }
   const boundary = await resolveOutputBoundary({
-    targetRoot,
+    targetRoot: git.root,
     outputPath: requestedOutputPath,
-    gitDir: await realpath(git.gitDir),
-    gitCommonDir: await realpath(git.commonDir)
+    gitDir: git.gitDir,
+    gitCommonDir: git.commonDir
   });
+  const targetRoot = boundary.targetRoot;
   const outputPath = boundary.outputPath;
   if (!isPathWithin(targetRoot, snapshotPath, { allowRoot: false })) throw new Error("Snapshot path must stay inside the target repository");
   if (!isPathWithin(targetRoot, outputPath, { allowRoot: false })) throw new Error("Document output must stay inside the target repository");
