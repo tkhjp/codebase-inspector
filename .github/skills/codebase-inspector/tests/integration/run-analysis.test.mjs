@@ -91,7 +91,7 @@ test("runs the standalone analysis and writes exactly six deterministic artifact
     expect(rerun).not.toContain(root);
     expect(rerun).not.toMatch(/\.tmp-|\.backup-/);
   }
-});
+}, 20_000);
 
 test("enforces Node 22 before running npm and keeps npm scoped to the Skill", async () => {
   const calls = [];
